@@ -1,0 +1,13 @@
+.tools/dotnet/
+.tools/cli-home/
+.tools/nuget/
+.vs/
+**/bin/
+**/obj/
+AppPackages/
+*.user
+*.suo
+*.pfx
+*.cer
+*.msix
+*.msixbundle
