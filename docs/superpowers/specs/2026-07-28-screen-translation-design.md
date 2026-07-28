@@ -19,6 +19,7 @@
 
 - .NET 8。
 - WPF 负责设置窗口、托盘菜单、框选层和译文覆盖层。
+- WPF UI 4.x 提供 FluentWindow、NavigationView、Fluent 控件、主题和 Windows 11 系统背景集成。
 - CommunityToolkit.Mvvm 负责视图模型和命令。
 - Microsoft.Extensions.DependencyInjection 负责模块装配。
 - Windows.Graphics.Capture 负责首选屏幕捕获，GDI BitBlt 作为兼容后备。
@@ -28,7 +29,25 @@
 - Windows DPAPI 负责 API Key 加密。
 - MSIX 负责安装和赋予 Windows OCR 所需的包身份。
 
-选择 WPF 而非 Electron 或 Tauri，是因为第一版的关键风险集中在透明置顶窗口、鼠标穿透、全局快捷键、多显示器和 DPI 坐标，而不是跨平台 UI。OCR 和翻译都通过接口隔离，未来可以替换引擎或增加跨平台客户端。
+选择 WPF 而非 Electron 或 Tauri，是因为第一版的关键风险集中在透明置顶窗口、鼠标穿透、全局快捷键、多显示器和 DPI 坐标，而不是跨平台 UI。使用 WPF UI 让设置窗口和结果面板接近 Windows 11 原生 Fluent 体验，同时保留 WPF 对覆盖窗口的成熟控制。OCR 和翻译都通过接口隔离，未来可以替换引擎或增加跨平台客户端。
+
+### 2.3 Windows 11 视觉规范
+
+软件以 Windows 11 的 Fluent Design 为唯一视觉方向，不设计独立品牌皮肤：
+
+- 主设置窗口使用 `FluentWindow`、系统标题栏行为和左侧 `NavigationView`。
+- 主窗口背景优先使用 Mica；Windows 10、关闭透明效果、远程桌面、高对比度或硬件不支持时自动回退到纯色背景。
+- 旁显面板和短暂弹出层使用 Acrylic 风格；原位覆盖块使用高对比度半透明纯色，避免复杂背景导致文字不可读。
+- 字体优先使用 Segoe UI Variable；中文由系统语言字体映射回退，不捆绑替代字体。
+- 正文使用 14 有效像素 Regular，辅助文本不小于 12 有效像素，标题使用 Semibold。
+- 图标使用 Segoe Fluent Icons 或 WPF UI 自带 Fluent System Icons，不混用 Emoji 和其他图标风格。
+- 窗口和卡片采用 Windows 11 圆角、细描边与轻量阴影；控件不使用夸张渐变、霓虹描边或大面积高饱和色。
+- 强调色跟随 Windows 系统强调色，危险操作使用系统危险色。
+- 默认跟随系统浅色或深色主题，用户可以强制浅色或深色。
+- 尊重系统高对比度、透明效果和减少动画设置；不可用的材质必须有等价纯色后备。
+- 动画只用于面板出现、进度状态和模式切换，时长短且不阻塞输入。
+
+设置窗口的导航顺序固定为“常规、翻译、外观、快捷键、隐私、关于”，设置入口位于导航底部。常规设置采用 Windows 11 设置应用式分组卡片，每张卡片只承载一个概念。
 
 ## 3. 用户体验
 
@@ -37,8 +56,8 @@
 首次启动进入简短设置页：
 
 1. 选择目标语言，默认简体中文。
-2. 选择 AI 服务类型：OpenAI 兼容接口或 Gemini。
-3. 填写 Base URL、模型名和 API Key。
+2. 填写 DeepSeek API Key。
+3. 选择模型，默认 `deepseek-v4-flash`，可切换 `deepseek-v4-pro`。
 4. 点击“测试连接”，成功后保存。
 5. 显示默认快捷键 `Alt + Shift + T`，允许修改。
 6. 选择默认显示方式，默认“原文旁边”。
@@ -96,7 +115,7 @@
 - 目标语言。
 - 翻译风格：自然、直译、学习模式。
 - 自定义上下文和术语。
-- AI 服务、模型、Base URL、API Key 和连接测试。
+- DeepSeek 模型、API Key、连接测试和高级 Base URL 覆盖。
 - 默认显示方式、字体、字号范围、背景透明度。
 - 全局快捷键。
 - 是否保存纯文本翻译历史，默认关闭。
@@ -147,10 +166,7 @@ OcrBlock
 
 #### ITranslationProvider
 
-输入带稳定 ID 的文本块、语言和翻译风格，输出相同 ID 的译文。第一版实现：
-
-- `OpenAiCompatibleTranslationProvider`
-- `GeminiTranslationProvider`
+输入带稳定 ID 的文本块、语言和翻译风格，输出相同 ID 的译文。第一版只实现 `DeepSeekTranslationProvider`。接口边界保留，以便未来增加其他服务，但不在第一版暴露其他供应商选项。
 
 #### TranslationOrchestrator
 
@@ -186,24 +202,26 @@ Hotkey
 
 每次操作都有独立的 `TranslationSessionId` 和 `CancellationToken`。任何旧会话返回的迟到结果都必须因为会话 ID 不匹配而被丢弃。
 
-## 5. AI 接口设计
+## 5. DeepSeek 接口设计
 
-### 5.1 OpenAI 兼容接口
+### 5.1 连接配置
 
-用户可配置：
+第一版直接调用 DeepSeek 官方 OpenAI 兼容 Chat Completions 接口：
 
-- Base URL。
-- API Key。
-- 模型名。
-- 请求超时，默认 15 秒。
+- 默认 Base URL：`https://api.deepseek.com`。
+- 请求路径：`/chat/completions`。
+- 默认模型：`deepseek-v4-flash`。
+- 可选模型：`deepseek-v4-pro`。
+- 默认关闭思考模式，发送 `"thinking": {"type": "disabled"}`，降低短文本翻译延迟和输出成本。
+- 使用 `Authorization: Bearer <API_KEY>`。
+- 请求超时默认 15 秒。
+- 使用非流式请求，确保完整 JSON 验证通过后再按文本块显示。
 
-适配器使用兼容的聊天补全请求格式，支持 OpenAI、DeepSeek、硅基流动、Groq、LM Studio、Ollama 等采用相同协议的服务。对于协议不完全兼容的服务，连接测试应明确显示响应状态和简化后的错误原因。
+不使用已经进入淘汰阶段的 `deepseek-chat` 和 `deepseek-reasoner` 模型别名。设置页允许高级用户覆盖 Base URL，以便应对官方域名变化或企业代理，但不承诺兼容其他服务商。
 
-### 5.2 Gemini
+连接测试发送最小翻译请求，验证密钥、模型和 JSON 输出能力。成功后显示当前模型与请求耗时；失败时只显示脱敏后的状态码和错误信息。
 
-Gemini 使用独立适配器，不通过 OpenAI 兼容层模拟。用户配置 API Key 和模型名，Base URL 由软件内置，但允许高级用户覆盖。
-
-### 5.3 翻译约束
+### 5.2 翻译约束
 
 发送给 AI 的默认内容只有 OCR 文本，不包含截图。请求包含：
 
@@ -222,7 +240,7 @@ Gemini 使用独立适配器，不通过 OpenAI 兼容层模拟。用户配置 A
 }
 ```
 
-AI 必须返回：
+请求设置 `response_format: {"type": "json_object"}`，系统提示词明确包含“JSON”及完整输出示例。DeepSeek 必须返回：
 
 ```json
 {
@@ -235,7 +253,7 @@ AI 必须返回：
 }
 ```
 
-返回缺少 ID、包含重复 ID 或不是有效 JSON 时，编排器用原始响应执行一次格式修复请求。第二次仍失败时，本次翻译失败并显示可读错误，不把无法定位的译文放到错误位置。
+返回空内容、缺少 ID、包含重复 ID、因为输出长度截断或不是有效 JSON 时，编排器用原始响应执行一次格式修复请求。第二次仍失败时，本次翻译失败并显示可读错误，不把无法定位的译文放到错误位置。
 
 ## 6. 坐标与窗口规则
 
@@ -327,7 +345,7 @@ AI 必须返回：
 - 100%、125%、150%、200% 缩放。
 - 主屏在左、右及带负坐标的布局。
 - 浏览器、PDF、图片、视频、无边框窗口游戏。
-- OpenAI 兼容云服务、Gemini、Ollama 或 LM Studio。
+- DeepSeek `deepseek-v4-flash` 和 `deepseek-v4-pro`。
 - 原位覆盖、旁显、固定、复制、重译、取消。
 - 快捷键冲突、断网、密钥错误、接口超时。
 
@@ -345,6 +363,7 @@ AI 必须返回：
 6. API Key 不以明文保存在磁盘或日志。
 7. API 错误有明确提示且不会导致程序退出。
 8. 默认不上传截图、不保存截图、不保存翻译历史。
+9. 设置窗口、旁显面板和控件在 Windows 11 下呈现统一 Fluent 风格，并正确跟随浅色、深色和系统强调色。
 
 ## 12. 后续版本边界
 
