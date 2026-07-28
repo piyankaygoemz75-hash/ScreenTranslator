@@ -1,0 +1,105 @@
+<Page x:Class="ScreenTranslator.App.Pages.GeneralPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Background="Transparent"
+      FontFamily="{DynamicResource AppFontFamily}"
+      FontSize="14">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,28,36,36"
+                    MaxWidth="760"
+                    HorizontalAlignment="Left">
+            <TextBlock Text="常规" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="设置日常使用方式，并随时开始一次屏幕翻译。"
+                       Style="{StaticResource PageSubtitleStyle}" />
+
+            <Border Style="{StaticResource SettingCardStyle}"
+                    Padding="22"
+                    Margin="0,0,0,18">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <Border Style="{StaticResource PillStyle}"
+                                HorizontalAlignment="Left"
+                                Margin="0,0,0,12">
+                            <TextBlock Text="Alt + Shift + T"
+                                       FontSize="12"
+                                       FontWeight="SemiBold" />
+                        </Border>
+                        <TextBlock Text="框选并翻译屏幕内容"
+                                   FontSize="20"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="拖动选择区域，松开后自动识别文字并调用 DeepSeek。"
+                                   Style="{StaticResource SettingDescriptionStyle}"
+                                   Margin="0,6,24,0" />
+                    </StackPanel>
+                    <ui:Button Grid.Column="1"
+                               Content="开始框选"
+                               Appearance="Primary"
+                               Padding="20,8"
+                               VerticalAlignment="Center"
+                               Command="{Binding StartCaptureCommand}" />
+                </Grid>
+            </Border>
+
+            <TextBlock Text="启动与语言" Style="{StaticResource SectionTitleStyle}" />
+
+            <Border Style="{StaticResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="220" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="默认目标语言" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="每次翻译默认输出的语言。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding TargetLanguages}"
+                              SelectedItem="{Binding TargetLanguage}"
+                              MinWidth="180"
+                              VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="最小化到系统托盘" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="关闭设置窗口后继续监听翻译快捷键。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="1"
+                                     IsChecked="{Binding MinimizeToTray}"
+                                     VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="开机启动" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="登录 Windows 后自动启动屏译，默认关闭。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="1"
+                                     IsChecked="{Binding StartWithWindows}"
+                                     VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,6 +1,9 @@
 .tools/dotnet/
 .tools/cli-home/
 .tools/nuget/
+.tools/appdata/
+artifacts/
+dist/
 .vs/
 **/bin/
 **/obj/

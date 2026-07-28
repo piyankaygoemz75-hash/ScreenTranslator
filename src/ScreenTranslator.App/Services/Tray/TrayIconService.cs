@@ -7,6 +7,7 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Forms.ToolStripMenuItem _pauseItem;
+    private readonly Icon? _applicationIcon;
 
     public TrayIconService()
     {
@@ -27,10 +28,13 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", image: null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
 
+        _applicationIcon = Environment.ProcessPath is { } processPath
+            ? Icon.ExtractAssociatedIcon(processPath)
+            : null;
         _notifyIcon = new Forms.NotifyIcon
         {
             Text = "屏幕翻译",
-            Icon = SystemIcons.Application,
+            Icon = _applicationIcon ?? SystemIcons.Application,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -49,5 +53,6 @@ public sealed class TrayIconService : IDisposable
     {
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _applicationIcon?.Dispose();
     }
 }
