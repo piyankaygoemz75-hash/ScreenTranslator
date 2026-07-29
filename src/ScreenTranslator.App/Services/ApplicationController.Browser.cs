@@ -14,7 +14,7 @@ namespace ScreenTranslator.App.Services;
 public sealed partial class ApplicationController
 {
     private static readonly TimeSpan BrowserFollowStartupTimeout =
-        TimeSpan.FromSeconds(35);
+        Timeout.InfiniteTimeSpan;
     private static readonly TimeSpan BrowserFollowRetryInterval =
         TimeSpan.FromMilliseconds(500);
 
@@ -32,6 +32,7 @@ public sealed partial class ApplicationController
     private BrowserWindowSnapshot? _browserWindowSnapshot;
     private Guid? _activeBrowserConnectionId;
     private int _browserFollowGeneration;
+    private bool _browserScrollLogged;
 
     private async Task InitializeBrowserIntegrationAsync()
     {
@@ -49,11 +50,15 @@ public sealed partial class ApplicationController
         {
             _nativeMessagingRegistration = new NativeMessagingRegistrationService();
             await _nativeMessagingRegistration.RegisterAsync();
+            BrowserFollowDiagnostics.Write("bridge_registration_ready");
             BrowserIntegration.DetailText =
                 "本机桥接已就绪。加载配套扩展后，Chrome/Edge 普通网页中的原位译文可随滚动移动。";
         }
         catch (Exception exception)
         {
+            BrowserFollowDiagnostics.Write(
+                "bridge_registration_failed",
+                ("error", exception.Message));
             BrowserIntegration.DetailText =
                 $"网页跟随桥接暂不可用：{exception.Message}";
         }
@@ -64,21 +69,39 @@ public sealed partial class ApplicationController
         IReadOnlyList<TextOverlayWindow> overlays,
         AppSettings settings)
     {
-        if (!settings.BrowserFollowingEnabled
-            || !BrowserIntegration.IsEnabled
-            || work.CapturedBrowser is null
-            || overlays.Count == 0
-            || _browserBridgeServer is null)
+        var capturedBrowser = work.CapturedBrowser;
+        var skipReason = !settings.BrowserFollowingEnabled
+            ? "setting_disabled"
+            : !BrowserIntegration.IsEnabled
+                ? "view_model_disabled"
+                : capturedBrowser is null
+                    ? "source_is_not_browser"
+                    : overlays.Count == 0
+                        ? "no_overlays"
+                        : _browserBridgeServer is null
+                            ? "bridge_server_unavailable"
+                            : null;
+        if (skipReason is not null)
         {
+            BrowserFollowDiagnostics.Write(
+                "follow_skipped",
+                ("reason", skipReason));
             return;
         }
 
+        ArgumentNullException.ThrowIfNull(capturedBrowser);
         BrowserWindowEventMonitor? monitor = null;
         var generation = Volatile.Read(ref _browserFollowGeneration);
+        var waitingWasLogged = false;
+        BrowserFollowDiagnostics.Write(
+            "follow_wait_started",
+            ("browser", capturedBrowser.Browser),
+            ("generation", generation),
+            ("overlays", overlays.Count));
         try
         {
             monitor = new BrowserWindowEventMonitor(
-                work.CapturedBrowser.Snapshot.Handle);
+                capturedBrowser.Snapshot.Handle);
             var startupWaiter = new BrowserFollowStartupWaiter(
                 BrowserFollowStartupTimeout,
                 BrowserFollowRetryInterval);
@@ -92,7 +115,7 @@ public sealed partial class ApplicationController
                     }
 
                     var activeTab = await QueryMatchingActiveTabAsync(
-                        work.CapturedBrowser.Browser,
+                        capturedBrowser.Browser,
                         snapshot,
                         cancellationToken);
                     return activeTab is null
@@ -104,14 +127,31 @@ public sealed partial class ApplicationController
                     && generation == Volatile.Read(ref _browserFollowGeneration)
                     && overlays.Any(overlay => overlay.IsLoaded)
                     && monitor.GetSnapshot() is not null,
-                () => BrowserIntegration.DetailText =
-                    "译文已显示，正在等待浏览器扩展连接并启用网页跟随…");
+                () =>
+                {
+                    BrowserIntegration.DetailText =
+                        "译文已显示，正在等待浏览器扩展连接并启用网页跟随…";
+                    if (!waitingWasLogged)
+                    {
+                        waitingWasLogged = true;
+                        BrowserFollowDiagnostics.Write(
+                            "follow_waiting_for_matching_tab",
+                            ("browser", capturedBrowser.Browser));
+                    }
+                });
             if (candidate is null
                 || _disposed
                 || generation != Volatile.Read(ref _browserFollowGeneration)
                 || overlays.All(overlay => !overlay.IsLoaded))
             {
                 monitor.Dispose();
+                BrowserFollowDiagnostics.Write(
+                    "follow_wait_stopped",
+                    ("disposed", _disposed),
+                    ("generation_current",
+                        generation == Volatile.Read(ref _browserFollowGeneration)),
+                    ("loaded_overlays",
+                        overlays.Count(overlay => overlay.IsLoaded)));
                 if (!_disposed
                     && generation == Volatile.Read(ref _browserFollowGeneration)
                     && overlays.Any(overlay => overlay.IsLoaded))
@@ -154,17 +194,28 @@ public sealed partial class ApplicationController
             _browserWindowMonitor = monitor;
             _browserWindowSnapshot = currentSnapshot;
             _activeBrowserConnectionId = match.ConnectionId;
+            _browserScrollLogged = false;
             monitor.Changed += OnBrowserWindowChanged;
+            BrowserFollowDiagnostics.Write(
+                "follow_attached",
+                ("browser", hello.Browser),
+                ("browser_window_id", hello.BrowserWindowId),
+                ("tab_id", hello.TabId),
+                ("overlays", activeOverlays.Length));
             BrowserIntegration.DetailText =
                 $"{BrowserLabel(hello.Browser)} 网页跟随已启用；滚动不会重复 OCR 或调用 DeepSeek。";
         }
         catch (OperationCanceledException)
         {
             monitor?.Dispose();
+            BrowserFollowDiagnostics.Write("follow_wait_cancelled");
         }
         catch (Exception exception)
         {
             monitor?.Dispose();
+            BrowserFollowDiagnostics.Write(
+                "follow_start_failed",
+                ("error", exception.Message));
             BrowserIntegration.DetailText =
                 $"本次保持静态译文，网页跟随未启动：{exception.Message}";
         }
@@ -278,6 +329,10 @@ public sealed partial class ApplicationController
                 if (ready?.BrowserKind is { } readyBrowser)
                 {
                     _browserConnections[e.ConnectionId] = readyBrowser;
+                    BrowserFollowDiagnostics.Write(
+                        "bridge_connected",
+                        ("browser", readyBrowser),
+                        ("connection_id", e.ConnectionId));
                     UpdateBrowserConnectionStatus(readyBrowser);
                 }
 
@@ -318,6 +373,16 @@ public sealed partial class ApplicationController
                 if (_activeBrowserConnectionId == e.ConnectionId)
                 {
                     _browserFollowCoordinator?.Handle(message);
+                    if (!_browserScrollLogged && message is BrowserScroll scroll)
+                    {
+                        _browserScrollLogged = true;
+                        BrowserFollowDiagnostics.Write(
+                            "first_scroll_received",
+                            ("browser_window_id", scroll.BrowserWindowId),
+                            ("tab_id", scroll.TabId),
+                            ("delta_x", scroll.DeltaXCss),
+                            ("delta_y", scroll.DeltaYCss));
+                    }
                 }
             });
         }
@@ -336,6 +401,10 @@ public sealed partial class ApplicationController
     {
         if (_browserConnections.TryRemove(e.ConnectionId, out var browser))
         {
+            BrowserFollowDiagnostics.Write(
+                "bridge_disconnected",
+                ("browser", browser),
+                ("connection_id", e.ConnectionId));
             UpdateBrowserConnectionStatus(browser);
         }
 
@@ -409,6 +478,7 @@ public sealed partial class ApplicationController
         _browserWindowSnapshot = null;
         _browserFollowCoordinator = null;
         _activeBrowserConnectionId = null;
+        _browserScrollLogged = false;
         BrowserIntegration.DetailText =
             $"网页状态已变化，旧译文已隐藏：{e.Reason}";
     }

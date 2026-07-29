@@ -24,6 +24,22 @@ public sealed class BrowserFollowStartupWaiterTests
     }
 
     [Fact]
+    public async Task WaitAsync_Can_Retry_Without_A_Startup_Deadline()
+    {
+        var attempts = 0;
+        var waiter = new BrowserFollowStartupWaiter(
+            Timeout.InfiniteTimeSpan,
+            TimeSpan.FromMilliseconds(1));
+
+        var result = await waiter.WaitAsync<int>(
+            _ => Task.FromResult<int?>(++attempts == 4 ? 7 : null),
+            () => true);
+
+        Assert.Equal(7, result);
+        Assert.Equal(4, attempts);
+    }
+
+    [Fact]
     public async Task WaitAsync_Stops_When_Overlay_Session_Is_No_Longer_Current()
     {
         var canContinue = true;

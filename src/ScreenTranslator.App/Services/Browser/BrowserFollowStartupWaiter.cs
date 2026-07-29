@@ -11,7 +11,7 @@ public sealed class BrowserFollowStartupWaiter
         TimeSpan timeout,
         TimeSpan retryInterval)
     {
-        if (timeout <= TimeSpan.Zero)
+        if (timeout != Timeout.InfiniteTimeSpan && timeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout));
         }
@@ -46,16 +46,17 @@ public sealed class BrowserFollowStartupWaiter
             }
 
             var elapsed = Stopwatch.GetElapsedTime(startedAt);
-            if (elapsed >= _timeout)
+            if (_timeout != Timeout.InfiniteTimeSpan && elapsed >= _timeout)
             {
                 return null;
             }
 
             onWaiting?.Invoke();
-            var delay = _timeout - elapsed;
-            if (delay > _retryInterval)
+            var delay = _retryInterval;
+            if (_timeout != Timeout.InfiniteTimeSpan
+                && _timeout - elapsed < delay)
             {
-                delay = _retryInterval;
+                delay = _timeout - elapsed;
             }
 
             await Task.Delay(delay, cancellationToken);

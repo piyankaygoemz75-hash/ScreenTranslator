@@ -50,6 +50,8 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 桌面程序刚启动而扩展仍在重连时，译文会先立即显示，再在后台自动接入网页跟随，无需重新框选。
 
+网页跟随只记录连接、标签页数字 ID 和滚动增量等诊断状态，不记录网址、网页正文、截图或 API Key。诊断文件位于 `%LOCALAPPDATA%\ScreenTranslator\browser-follow.log`，超过 1 MiB 会自动从头记录。
+
 ## 隐私
 
 截图只存在于当前进程内存。默认只把 OCR 识别出的文本发送给 DeepSeek；程序不会把截图上传到翻译 API。API Key 不会写入普通配置文件或日志。
