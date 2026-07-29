@@ -57,6 +57,8 @@ public sealed record AppSettings
 
     public bool StartWithWindows { get; init; }
 
+    public bool MinimizeToTray { get; init; } = true;
+
     public AppSettings Migrate(out bool hotkeyWasReset)
     {
         hotkeyWasReset = !HotkeyGesture.TryParse(Hotkey, out var gesture);

@@ -48,6 +48,7 @@ public sealed partial class ApplicationController : IDisposable
     private LastTranslationWork? _lastWork;
     private bool _overlaysVisible = true;
     private bool _applyingSettings;
+    private bool _exitRequested;
     private bool _disposed;
 
     public ApplicationController(Application application)
@@ -59,7 +60,7 @@ public sealed partial class ApplicationController : IDisposable
         _ocrEngine = new WindowsOcrEngine();
         _hotkey = new GlobalHotkeyService();
         _hotkeyCoordinator = new HotkeyRegistrationCoordinator(_hotkey);
-        _tray = new TrayIconService();
+        _tray = new TrayIconService(application.Dispatcher);
 
         MainWindow = new MainWindowViewModel();
         BrowserIntegration = new BrowserIntegrationViewModel();
@@ -133,8 +134,11 @@ public sealed partial class ApplicationController : IDisposable
     {
         if (_mainWindow is null || !_mainWindow.IsLoaded)
         {
-            _mainWindow = new MainWindow(MainWindow);
-            _mainWindow.Closed += (_, _) => _mainWindow = null;
+            _mainWindow = new MainWindow(MainWindow)
+            {
+                HideOnClose = GeneralSettings.MinimizeToTray,
+            };
+            _mainWindow.Closed += OnMainWindowClosed;
         }
 
         if (!_mainWindow.IsVisible)
@@ -148,6 +152,20 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         _mainWindow.Activate();
+    }
+
+    private void OnMainWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is MainWindow window)
+        {
+            window.Closed -= OnMainWindowClosed;
+        }
+
+        _mainWindow = null;
+        if (!_exitRequested && !GeneralSettings.MinimizeToTray)
+        {
+            Exit();
+        }
     }
 
     private void OnCaptureRequested(object? sender, EventArgs e) =>
@@ -638,6 +656,12 @@ public sealed partial class ApplicationController : IDisposable
         {
             ApplyStartupRegistration(GeneralSettings.StartWithWindows);
         }
+        else if (sender == GeneralSettings
+                 && e.PropertyName == nameof(GeneralSettings.MinimizeToTray)
+                 && _mainWindow is not null)
+        {
+            _mainWindow.HideOnClose = GeneralSettings.MinimizeToTray;
+        }
 
         try
         {
@@ -764,6 +788,7 @@ public sealed partial class ApplicationController : IDisposable
             var targetLabel = LanguageLabel(settings.TargetLanguage);
             GeneralSettings.TargetLanguage = targetLabel;
             GeneralSettings.StartWithWindows = settings.StartWithWindows;
+            GeneralSettings.MinimizeToTray = settings.MinimizeToTray;
             GeneralSettings.CaptureHotkeyText =
                 HotkeyGesture.Parse(settings.Hotkey).ToDisplayString();
             BrowserIntegration.IsEnabled = settings.BrowserFollowingEnabled;
@@ -806,6 +831,7 @@ public sealed partial class ApplicationController : IDisposable
             OverlayOpacity = Math.Clamp(AppearanceSettings.PanelOpacity / 100, 0.72, 1),
             SaveHistory = false,
             StartWithWindows = GeneralSettings.StartWithWindows,
+            MinimizeToTray = GeneralSettings.MinimizeToTray,
             Hotkey = HotkeySettings.Gesture.ToPersistedString(),
             HotkeyEnabled = HotkeySettings.IsEnabled,
             BrowserFollowingEnabled = BrowserIntegration.IsEnabled,
@@ -992,8 +1018,14 @@ public sealed partial class ApplicationController : IDisposable
 
     public void Exit()
     {
-        if (!_disposed)
+        if (!_disposed && !_exitRequested)
         {
+            _exitRequested = true;
+            if (_mainWindow is not null)
+            {
+                _mainWindow.IsApplicationShuttingDown = true;
+            }
+
             _application.Shutdown();
         }
     }

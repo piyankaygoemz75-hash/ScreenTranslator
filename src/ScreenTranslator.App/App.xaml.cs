@@ -50,6 +50,12 @@ public partial class App : System.Windows.Application
 
         DispatcherUnhandledException += (_, args) =>
         {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                args.Handled = true;
+                return;
+            }
+
             MessageBox.Show(
                 $"屏译遇到未处理的错误：{args.Exception.Message}",
                 "屏译",

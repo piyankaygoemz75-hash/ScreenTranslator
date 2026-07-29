@@ -18,6 +18,7 @@ public sealed class AppSettingsTests
         Assert.Equal("Alt+Shift+T", settings.Hotkey);
         Assert.True(settings.HotkeyEnabled);
         Assert.True(settings.BrowserFollowingEnabled);
+        Assert.True(settings.MinimizeToTray);
         Assert.Null(settings.SidePanelPlacement);
         Assert.DoesNotContain(
             settings.GetType().GetProperties(),
@@ -43,6 +44,7 @@ public sealed class AppSettingsTests
         Assert.Equal("Alt+Shift+T", migrated.Hotkey);
         Assert.True(migrated.HotkeyEnabled);
         Assert.True(migrated.BrowserFollowingEnabled);
+        Assert.True(migrated.MinimizeToTray);
         Assert.Null(migrated.SidePanelPlacement);
         Assert.True(hotkeyWasReset);
     }
