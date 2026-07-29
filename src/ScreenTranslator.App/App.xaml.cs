@@ -1,6 +1,7 @@
 using System.Windows;
 using ScreenTranslator.App.Infrastructure;
 using ScreenTranslator.App.Services;
+using ScreenTranslator.App.Services.Browser;
 using MessageBox = System.Windows.MessageBox;
 
 namespace ScreenTranslator.App;
@@ -14,6 +15,26 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (NativeMessagingHost.IsBrowserInvocation(e.Args))
+        {
+            try
+            {
+                await NativeMessagingHost.RunAsync(
+                    Console.OpenStandardInput(),
+                    Console.OpenStandardOutput(),
+                    CancellationToken.None);
+                Shutdown();
+            }
+            catch (Exception exception)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"ScreenTranslator native messaging host failed: {exception.Message}");
+                Shutdown(1);
+            }
+
+            return;
+        }
 
         _singleInstanceGuard = new SingleInstanceGuard();
         if (!_singleInstanceGuard.IsPrimaryInstance)

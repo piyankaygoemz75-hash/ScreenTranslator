@@ -4,11 +4,13 @@
 
 ## 功能
 
-- 默认快捷键：`Alt + Shift + T`
+- 可录制和保存的全局快捷键（默认 `Alt + Shift + T`）
 - 多显示器与混合 DPI 框选
 - Windows 本地 OCR
 - DeepSeek `deepseek-v4-flash` / `deepseek-v4-pro`
 - 原位覆盖与旁边浮窗
+- Chrome / Edge 普通网页原位译文滚动跟随
+- 可拖动、可滚轮滚动且操作栏固定可见的旁边浮窗
 - Windows 11 Fluent、Mica、浅色和深色主题
 - API Key 使用当前 Windows 用户范围的 DPAPI 加密
 - 默认不上传截图、不保存截图、不保存翻译历史
@@ -31,7 +33,19 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 4. 点击“测试连接”。
 5. 保存后使用 `Alt + Shift + T` 开始框选。
 
+快捷键可在“快捷键”设置页直接录制修改；如果新组合被其他软件占用，屏译会恢复上一个可用组合。
+
 默认接口地址为 `https://api.deepseek.com`。短文本翻译使用非思考模式和 JSON 输出，以降低延迟并保持 OCR 文本块与译文一一对应。
+
+## 启用 Chrome / Edge 网页跟随
+
+1. 启动屏译，在“常规”页确认“网页译文跟随”已开启。
+2. 点击“打开扩展文件夹”。
+3. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式。
+4. 选择“加载已解压的扩展”，加载发布目录中的 `browser-extension` 文件夹。
+5. 浏览器状态显示“已连接”后，在普通网页上使用“原位覆盖”翻译。
+
+网页滚动只移动已经生成的译文，不会重新截图、OCR 或请求 DeepSeek。切换标签页、导航、缩放、最小化或改变浏览器窗口大小时，旧译文会自动失效。浏览器内置 PDF、内部页面和禁止内容脚本的页面继续使用静态翻译。
 
 ## 隐私
 
@@ -49,4 +63,4 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 publish src\ScreenTransl
 
 - 屏幕捕获当前使用 GDI 兼容后端；Windows 图形捕获的 D3D11 单帧后端尚未启用。
 - UAC 安全桌面、DRM 视频和部分受保护窗口可能无法截图。
-- 当前版本的全局快捷键固定为 `Alt + Shift + T`。
+- 浏览器跟随仅支持安装配套扩展后的 Chrome / Edge 普通 `http://`、`https://` 页面。

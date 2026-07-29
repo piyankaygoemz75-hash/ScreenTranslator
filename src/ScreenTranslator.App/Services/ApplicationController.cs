@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Windows.Input;
 using Microsoft.Win32;
+using ScreenTranslator.App.Services.Browser;
 using ScreenTranslator.App.Services.Capture;
 using ScreenTranslator.App.Services.Hotkeys;
 using ScreenTranslator.App.Services.Ocr;
@@ -11,6 +12,9 @@ using ScreenTranslator.App.Services.Tray;
 using ScreenTranslator.App.ViewModels;
 using ScreenTranslator.App.Windows;
 using ScreenTranslator.Core.Abstractions;
+using ScreenTranslator.Core.Browser;
+using ScreenTranslator.Core.Hotkeys;
+using ScreenTranslator.Core.Layout;
 using ScreenTranslator.Core.Models;
 using ScreenTranslator.Core.Sessions;
 using ScreenTranslator.Core.Settings;
@@ -24,7 +28,7 @@ using Window = System.Windows.Window;
 
 namespace ScreenTranslator.App.Services;
 
-public sealed class ApplicationController : IDisposable
+public sealed partial class ApplicationController : IDisposable
 {
     private readonly Application _application;
     private readonly ISettingsStore _settingsStore;
@@ -32,6 +36,7 @@ public sealed class ApplicationController : IDisposable
     private readonly IScreenCaptureService _screenCapture;
     private readonly IOcrEngine _ocrEngine;
     private readonly IGlobalHotkeyService _hotkey;
+    private readonly HotkeyRegistrationCoordinator _hotkeyCoordinator;
     private readonly TrayIconService _tray;
     private readonly TranslationSessionCoordinator _sessions = new();
     private readonly SemaphoreSlim _captureGate = new(1, 1);
@@ -53,10 +58,12 @@ public sealed class ApplicationController : IDisposable
         _screenCapture = new FallbackScreenCaptureService();
         _ocrEngine = new WindowsOcrEngine();
         _hotkey = new GlobalHotkeyService();
+        _hotkeyCoordinator = new HotkeyRegistrationCoordinator(_hotkey);
         _tray = new TrayIconService();
 
         MainWindow = new MainWindowViewModel();
-        GeneralSettings = new GeneralSettingsViewModel();
+        BrowserIntegration = new BrowserIntegrationViewModel();
+        GeneralSettings = new GeneralSettingsViewModel(BrowserIntegration);
         TranslationSettings = new TranslationSettingsViewModel();
         AppearanceSettings = new AppearanceSettingsViewModel();
         HotkeySettings = new HotkeySettingsViewModel();
@@ -66,6 +73,8 @@ public sealed class ApplicationController : IDisposable
     public MainWindowViewModel MainWindow { get; }
 
     public GeneralSettingsViewModel GeneralSettings { get; }
+
+    public BrowserIntegrationViewModel BrowserIntegration { get; }
 
     public TranslationSettingsViewModel TranslationSettings { get; }
 
@@ -77,8 +86,15 @@ public sealed class ApplicationController : IDisposable
 
     public async Task InitializeAsync()
     {
-        _persistedSettings = await _settingsStore.LoadAsync();
+        var loadedSettings = await _settingsStore.LoadAsync();
+        _persistedSettings = loadedSettings.Migrate(out var hotkeyWasReset);
+        if (loadedSettings.Version != AppSettings.CurrentVersion || hotkeyWasReset)
+        {
+            await _settingsStore.SaveAsync(_persistedSettings);
+        }
+
         ApplySettings(_persistedSettings);
+        await InitializeBrowserIntegrationAsync();
 
         MainWindow.StartCaptureRequested += OnCaptureRequested;
         GeneralSettings.StartCaptureRequested += OnCaptureRequested;
@@ -86,10 +102,13 @@ public sealed class ApplicationController : IDisposable
         TranslationSettings.PropertyChanged += OnSettingsPropertyChanged;
         AppearanceSettings.PropertyChanged += OnSettingsPropertyChanged;
         HotkeySettings.PropertyChanged += OnSettingsPropertyChanged;
+        BrowserIntegration.PropertyChanged += OnSettingsPropertyChanged;
         PrivacySettings.PropertyChanged += OnSettingsPropertyChanged;
         TranslationSettings.SaveRequested += OnTranslationSettingsSaveRequested;
         TranslationSettings.ConnectionTester = TestConnectionAsync;
-        HotkeySettings.RecordRequested += OnHotkeyRecordRequested;
+        HotkeySettings.RecordingStarted += OnHotkeyRecordingStarted;
+        HotkeySettings.RecordingCancelled += OnHotkeyRecordingCancelled;
+        HotkeySettings.GestureSubmitted += OnHotkeyGestureSubmitted;
         PrivacySettings.ClearHistoryRequested += OnClearHistoryRequested;
 
         _hotkey.CaptureRequested += OnCaptureRequested;
@@ -99,9 +118,15 @@ public sealed class ApplicationController : IDisposable
         _tray.HotkeyPauseChanged += OnHotkeyPauseChanged;
         _tray.ExitRequested += (_, _) => Exit();
 
-        RegisterDefaultHotkey();
+        RegisterSavedHotkey();
         ApplyStartupRegistration(_persistedSettings.StartWithWindows);
-        MainWindow.StatusText = "准备就绪 · Alt + Shift + T";
+        MainWindow.StatusText = hotkeyWasReset
+            ? $"快捷键设置无效，已恢复为 {HotkeyGesture.Default.ToDisplayString()}"
+            : _persistedSettings.HotkeyEnabled && !_hotkeyCoordinator.IsEnabled
+                ? "快捷键冲突，可从托盘开始框选"
+                : _persistedSettings.HotkeyEnabled
+                    ? $"准备就绪 · {HotkeySettings.HotkeyText}"
+                    : "准备就绪 · 快捷键已暂停";
     }
 
     public void ShowSettings()
@@ -143,6 +168,7 @@ public sealed class ApplicationController : IDisposable
             MainWindow.IsCaptureAvailable = false;
             MainWindow.StatusText = "正在截取屏幕…";
 
+            var capturedBrowser = BrowserWindowEventMonitor.CaptureForegroundBrowser();
             CloseResultWindows();
             _mainWindow?.Hide();
             await _application.Dispatcher.InvokeAsync(
@@ -202,7 +228,8 @@ public sealed class ApplicationController : IDisposable
             _lastWork = new LastTranslationWork(
                 selection.Capture.Monitor,
                 selection.Bounds,
-                blocks);
+                blocks,
+                capturedBrowser);
 
             _sessions.TryTransition(session.Id, TranslationSessionState.Translating);
             await TranslateAndShowAsync(_lastWork, settings, session);
@@ -363,7 +390,8 @@ public sealed class ApplicationController : IDisposable
 
         if (settings.DisplayMode == DisplayMode.Overlay)
         {
-            ShowTextOverlays(work, result, settings);
+            var overlays = ShowTextOverlays(work, result, settings);
+            _ = TryStartBrowserFollowingAsync(work, overlays, settings);
         }
         else
         {
@@ -385,24 +413,35 @@ public sealed class ApplicationController : IDisposable
         viewModel.SwitchModeRequested += (_, _) =>
         {
             CloseResultWindows();
-            ShowTextOverlays(
+            var overlays = ShowTextOverlays(
                 work,
                 result,
+                settings with { DisplayMode = DisplayMode.Overlay });
+            _ = TryStartBrowserFollowingAsync(
+                work,
+                overlays,
                 settings with { DisplayMode = DisplayMode.Overlay });
         };
 
         var monitor = work.Monitor;
-        panel.PlaceBeside(
-            ToDipRect(work.AbsoluteSelection, monitor),
-            ToDipRect(monitor.WorkArea, monitor));
+        var sourceBounds = ToCoreDipRect(work.AbsoluteSelection, monitor);
+        var workArea = ToCoreDipRect(monitor.WorkArea, monitor);
+        var panelBounds = SidePanelBoundsService.Place(
+            sourceBounds,
+            workArea,
+            new DipSize(panel.Width, panel.Height),
+            settings.SidePanelPlacement);
+        panel.ApplyPlacement(panelBounds, workArea);
+        panel.PlacementChanged += OnSidePanelPlacementChanged;
         TrackAndShow(panel);
     }
 
-    private void ShowTextOverlays(
+    private IReadOnlyList<TextOverlayWindow> ShowTextOverlays(
         LastTranslationWork work,
         TranslationResult result,
         AppSettings settings)
     {
+        var overlays = new List<TextOverlayWindow>(result.Blocks.Count);
         foreach (var block in result.Blocks)
         {
             var viewModel = new TranslationResultViewModel
@@ -435,7 +474,10 @@ public sealed class ApplicationController : IDisposable
                     settings with { DisplayMode = DisplayMode.SidePanel });
             };
             TrackAndShow(overlay);
+            overlays.Add(overlay);
         }
+
+        return overlays;
     }
 
     private static TranslationResultViewModel CreateResultViewModel(
@@ -458,6 +500,7 @@ public sealed class ApplicationController : IDisposable
 
     private void CloseResultWindows()
     {
+        StopBrowserFollowing(hideOverlays: false);
         foreach (var window in _resultWindows.ToArray())
         {
             window.Close();
@@ -554,6 +597,26 @@ public sealed class ApplicationController : IDisposable
             return;
         }
 
+        if (sender == HotkeySettings)
+        {
+            if (e.PropertyName != nameof(HotkeySettings.IsEnabled))
+            {
+                return;
+            }
+
+            await ApplyHotkeyEnabledStateAsync();
+            return;
+        }
+
+        if (sender == BrowserIntegration
+            && e.PropertyName == nameof(BrowserIntegration.IsEnabled)
+            && !BrowserIntegration.IsEnabled)
+        {
+            StopBrowserFollowing(hideOverlays: false);
+            BrowserIntegration.DetailText =
+                "网页跟随已关闭；现有译文保持静态显示。";
+        }
+
         if (sender == GeneralSettings && e.PropertyName == nameof(GeneralSettings.TargetLanguage))
         {
             _applyingSettings = true;
@@ -605,20 +668,65 @@ public sealed class ApplicationController : IDisposable
     {
         if (paused)
         {
-            _hotkey.Unregister();
-            HotkeySettings.IsEnabled = false;
+            _hotkeyCoordinator.Disable();
             HotkeySettings.StatusText = "快捷键已暂停";
         }
         else
         {
-            RegisterDefaultHotkey();
+            RegisterSavedHotkey();
         }
     }
 
-    private void OnHotkeyRecordRequested(object? sender, EventArgs e)
+    private void OnHotkeyRecordingStarted(object? sender, EventArgs e)
     {
-        HotkeySettings.HotkeyText = "Alt + Shift + T";
-        HotkeySettings.StatusText = "当前版本使用默认快捷键";
+        _hotkeyCoordinator.Suspend();
+        HotkeySettings.StatusText = "请按新的组合键 · Esc 取消";
+    }
+
+    private void OnHotkeyRecordingCancelled(object? sender, EventArgs e)
+    {
+        if (!_persistedSettings.HotkeyEnabled)
+        {
+            ApplyHotkeyViewModel(
+                _hotkeyCoordinator.CurrentGesture,
+                isEnabled: false,
+                "快捷键保持暂停");
+            return;
+        }
+
+        var result = _hotkeyCoordinator.TryRestoreCurrent();
+        ApplyHotkeyViewModel(
+            result.Gesture,
+            result.IsEnabled,
+            result.IsEnabled ? "已取消修改，原快捷键已恢复" : result.Message);
+    }
+
+    private async void OnHotkeyGestureSubmitted(
+        object? sender,
+        HotkeyGesture gesture)
+    {
+        var result = _hotkeyCoordinator.TryReplace(gesture);
+        ApplyHotkeyViewModel(
+            result.Gesture,
+            result.IsEnabled,
+            result.Message);
+
+        if (result.Succeeded)
+        {
+            _persistedSettings = _persistedSettings with
+            {
+                Hotkey = result.Gesture.ToPersistedString(),
+                HotkeyEnabled = true,
+            };
+            MainWindow.StatusText = $"快捷键已更新 · {result.Gesture.ToDisplayString()}";
+            await SaveSettingsAsync();
+        }
+        else if (!result.IsEnabled)
+        {
+            _persistedSettings = _persistedSettings with { HotkeyEnabled = false };
+            MainWindow.StatusText = "快捷键已禁用，可从托盘开始框选";
+            await SaveSettingsAsync();
+        }
     }
 
     private void OnClearHistoryRequested(object? sender, EventArgs e)
@@ -627,18 +735,23 @@ public sealed class ApplicationController : IDisposable
         MainWindow.StatusText = "本地翻译历史已清除";
     }
 
-    private void RegisterDefaultHotkey()
+    private void RegisterSavedHotkey()
     {
-        try
+        var gesture = HotkeyGesture.Parse(_persistedSettings.Hotkey);
+        if (!_persistedSettings.HotkeyEnabled)
         {
-            _hotkey.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.T);
-            HotkeySettings.IsEnabled = true;
-            HotkeySettings.StatusText = "快捷键可用";
+            _hotkeyCoordinator.Disable();
+            ApplyHotkeyViewModel(gesture, isEnabled: false, "快捷键已暂停");
+            return;
         }
-        catch (HotkeyConflictException exception)
+
+        var result = _hotkeyCoordinator.TryEnable(gesture);
+        ApplyHotkeyViewModel(
+            result.Gesture,
+            result.IsEnabled,
+            result.Succeeded ? "快捷键可用" : result.Message);
+        if (!result.Succeeded)
         {
-            HotkeySettings.IsEnabled = false;
-            HotkeySettings.StatusText = exception.Message;
             MainWindow.StatusText = "快捷键冲突，可从托盘开始框选";
         }
     }
@@ -651,6 +764,9 @@ public sealed class ApplicationController : IDisposable
             var targetLabel = LanguageLabel(settings.TargetLanguage);
             GeneralSettings.TargetLanguage = targetLabel;
             GeneralSettings.StartWithWindows = settings.StartWithWindows;
+            GeneralSettings.CaptureHotkeyText =
+                HotkeyGesture.Parse(settings.Hotkey).ToDisplayString();
+            BrowserIntegration.IsEnabled = settings.BrowserFollowingEnabled;
             TranslationSettings.SelectedModel = settings.DeepSeekModel;
             TranslationSettings.BaseUrl = settings.DeepSeekBaseUrl;
             TranslationSettings.SourceLanguage = LanguageLabel(settings.SourceLanguage);
@@ -663,6 +779,10 @@ public sealed class ApplicationController : IDisposable
                 settings.DisplayMode == DisplayMode.Overlay ? "原位覆盖" : "原文旁边";
             AppearanceSettings.PanelOpacity = settings.OverlayOpacity * 100;
             PrivacySettings.SaveTextHistory = settings.SaveHistory;
+            HotkeySettings.ApplyGesture(
+                HotkeyGesture.Parse(settings.Hotkey),
+                settings.HotkeyEnabled,
+                settings.HotkeyEnabled ? "准备注册快捷键" : "快捷键已暂停");
         }
         finally
         {
@@ -686,7 +806,64 @@ public sealed class ApplicationController : IDisposable
             OverlayOpacity = Math.Clamp(AppearanceSettings.PanelOpacity / 100, 0.72, 1),
             SaveHistory = false,
             StartWithWindows = GeneralSettings.StartWithWindows,
+            Hotkey = HotkeySettings.Gesture.ToPersistedString(),
+            HotkeyEnabled = HotkeySettings.IsEnabled,
+            BrowserFollowingEnabled = BrowserIntegration.IsEnabled,
         };
+
+    private async Task ApplyHotkeyEnabledStateAsync()
+    {
+        if (HotkeySettings.IsEnabled)
+        {
+            var result = _hotkeyCoordinator.TryEnable(HotkeySettings.Gesture);
+            ApplyHotkeyViewModel(
+                result.Gesture,
+                result.IsEnabled,
+                result.Succeeded ? "快捷键可用" : result.Message);
+        }
+        else
+        {
+            _hotkeyCoordinator.Disable();
+            HotkeySettings.StatusText = "快捷键已暂停";
+        }
+
+        await SaveSettingsAsync();
+    }
+
+    private void ApplyHotkeyViewModel(
+        HotkeyGesture gesture,
+        bool isEnabled,
+        string statusText)
+    {
+        _applyingSettings = true;
+        try
+        {
+            HotkeySettings.ApplyGesture(gesture, isEnabled, statusText);
+            GeneralSettings.CaptureHotkeyText = gesture.ToDisplayString();
+        }
+        finally
+        {
+            _applyingSettings = false;
+        }
+    }
+
+    private async void OnSidePanelPlacementChanged(
+        object? sender,
+        WindowPlacement placement)
+    {
+        _persistedSettings = _persistedSettings with
+        {
+            SidePanelPlacement = placement,
+        };
+        try
+        {
+            await SaveSettingsAsync();
+        }
+        catch
+        {
+            MainWindow.StatusText = "侧边窗口位置将在退出时重试保存";
+        }
+    }
 
     private static DeepSeekOptions CreateDeepSeekOptions(AppSettings settings)
     {
@@ -705,6 +882,13 @@ public sealed class ApplicationController : IDisposable
     }
 
     private static Rect ToDipRect(PixelRect rect, ScreenMonitor monitor) =>
+        new(
+            rect.X / monitor.ScaleX,
+            rect.Y / monitor.ScaleY,
+            rect.Width / monitor.ScaleX,
+            rect.Height / monitor.ScaleY);
+
+    private static DipRect ToCoreDipRect(PixelRect rect, ScreenMonitor monitor) =>
         new(
             rect.X / monitor.ScaleX,
             rect.Y / monitor.ScaleY,
@@ -832,6 +1016,7 @@ public sealed class ApplicationController : IDisposable
         }
 
         CloseResultWindows();
+        DisposeBrowserIntegration();
         _sessions.Dispose();
         _hotkey.Dispose();
         _tray.Dispose();
@@ -844,7 +1029,8 @@ public sealed class ApplicationController : IDisposable
     private sealed record LastTranslationWork(
         ScreenMonitor Monitor,
         PixelRect AbsoluteSelection,
-        IReadOnlyList<OcrBlock> Blocks);
+        IReadOnlyList<OcrBlock> Blocks,
+        CapturedBrowserWindow? CapturedBrowser);
 
     private sealed class InMemorySecretStore(string apiKey) : ISecretStore
     {

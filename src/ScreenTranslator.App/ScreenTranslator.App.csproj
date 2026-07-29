@@ -27,4 +27,13 @@
     <ProjectReference Include="..\ScreenTranslator.Core\ScreenTranslator.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\browser-extension\**\*"
+             Exclude="..\..\browser-extension\tests\**\*">
+      <Link>browser-extension\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

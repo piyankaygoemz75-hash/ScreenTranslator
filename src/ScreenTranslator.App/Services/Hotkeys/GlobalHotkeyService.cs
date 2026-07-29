@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
 using System.Windows.Interop;
+using ScreenTranslator.Core.Hotkeys;
 
 namespace ScreenTranslator.App.Services.Hotkeys;
 
@@ -11,7 +12,7 @@ public interface IGlobalHotkeyService : IDisposable
 
     bool IsRegistered { get; }
 
-    void Register(ModifierKeys modifiers, Key key);
+    void Register(HotkeyGesture gesture);
 
     void Unregister();
 }
@@ -51,13 +52,28 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
 
     public bool IsRegistered { get; private set; }
 
-    public void Register(ModifierKeys modifiers, Key key)
+    public void Register(HotkeyGesture gesture)
     {
+        ArgumentNullException.ThrowIfNull(gesture);
         ObjectDisposedException.ThrowIf(_disposed, this);
         Unregister();
 
+        var keyName = gesture.KeyName.Length == 1 && char.IsDigit(gesture.KeyName[0])
+            ? $"D{gesture.KeyName}"
+            : gesture.KeyName;
+        var converter = new KeyConverter();
+        if (converter.ConvertFromInvariantString(keyName) is not Key key ||
+            key == Key.None)
+        {
+            throw new ArgumentException("快捷键包含无法注册的按键。", nameof(gesture));
+        }
+
         var virtualKey = KeyInterop.VirtualKeyFromKey(key);
-        if (!RegisterHotKey(_messageSource.Handle, HotkeyId, ToNativeModifiers(modifiers), (uint)virtualKey))
+        if (!RegisterHotKey(
+                _messageSource.Handle,
+                HotkeyId,
+                ToNativeModifiers(gesture.Modifiers),
+                (uint)virtualKey))
         {
             var error = new Win32Exception(Marshal.GetLastWin32Error());
             throw new HotkeyConflictException("快捷键已被其他程序占用，请在设置中更换。", error);
@@ -101,25 +117,25 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
         return IntPtr.Zero;
     }
 
-    private static uint ToNativeModifiers(ModifierKeys modifiers)
+    private static uint ToNativeModifiers(HotkeyModifiers modifiers)
     {
         uint result = 0;
-        if (modifiers.HasFlag(ModifierKeys.Alt))
+        if (modifiers.HasFlag(HotkeyModifiers.Alt))
         {
             result |= 0x0001;
         }
 
-        if (modifiers.HasFlag(ModifierKeys.Control))
+        if (modifiers.HasFlag(HotkeyModifiers.Control))
         {
             result |= 0x0002;
         }
 
-        if (modifiers.HasFlag(ModifierKeys.Shift))
+        if (modifiers.HasFlag(HotkeyModifiers.Shift))
         {
             result |= 0x0004;
         }
 
-        if (modifiers.HasFlag(ModifierKeys.Windows))
+        if (modifiers.HasFlag(HotkeyModifiers.Windows))
         {
             result |= 0x0008;
         }

@@ -26,7 +26,7 @@
                         <Border Style="{StaticResource PillStyle}"
                                 HorizontalAlignment="Left"
                                 Margin="0,0,0,12">
-                            <TextBlock Text="Alt + Shift + T"
+                            <TextBlock Text="{Binding CaptureHotkeyText}"
                                        FontSize="12"
                                        FontWeight="SemiBold" />
                         </Border>
@@ -99,6 +99,76 @@
                                      IsChecked="{Binding StartWithWindows}"
                                      VerticalAlignment="Center" />
                 </Grid>
+            </Border>
+
+            <TextBlock Text="网页译文跟随"
+                       Style="{StaticResource SectionTitleStyle}"
+                       Margin="0,24,0,10" />
+
+            <Border Style="{StaticResource SettingCardStyle}"
+                    Padding="22">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,24,0">
+                            <TextBlock Text="Chrome / Edge 普通网页"
+                                       Style="{StaticResource SettingLabelStyle}" />
+                            <TextBlock Text="只移动现有译文，不会因滚动重复截图、OCR 或调用 AI。页面切换、缩放和窗口大小改变时会自动隐藏旧译文。"
+                                       Style="{StaticResource SettingDescriptionStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ui:ToggleSwitch Grid.Column="1"
+                                         IsChecked="{Binding BrowserIntegration.IsEnabled}"
+                                         VerticalAlignment="Top" />
+                    </Grid>
+
+                    <Border Margin="0,18,0,14"
+                            Padding="14,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Chrome"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,10,0" />
+                                <TextBlock Text="{Binding BrowserIntegration.ChromeStatus}"
+                                           Opacity="0.72" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal">
+                                <TextBlock Text="Edge"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,10,0" />
+                                <TextBlock Text="{Binding BrowserIntegration.EdgeStatus}"
+                                           Opacity="0.72" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="{Binding BrowserIntegration.DetailText}"
+                               Style="{StaticResource SettingDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,14" />
+
+                    <WrapPanel>
+                        <ui:Button Content="打开扩展文件夹"
+                                   Command="{Binding BrowserIntegration.OpenExtensionFolderCommand}"
+                                   Margin="0,0,10,8" />
+                        <ui:Button Content="Chrome 扩展页"
+                                   Command="{Binding BrowserIntegration.OpenChromeExtensionsCommand}"
+                                   Margin="0,0,10,8" />
+                        <ui:Button Content="Edge 扩展页"
+                                   Command="{Binding BrowserIntegration.OpenEdgeExtensionsCommand}"
+                                   Margin="0,0,0,8" />
+                    </WrapPanel>
+                </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>

@@ -4,7 +4,11 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Background="Transparent"
       FontFamily="{DynamicResource AppFontFamily}"
-      FontSize="14">
+      FontSize="14"
+      PreviewKeyDown="Page_OnPreviewKeyDown">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Page.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="32,28,36,36"
                     MaxWidth="760"
@@ -36,10 +40,35 @@
                                    Style="{StaticResource SettingDescriptionStyle}" />
                     </StackPanel>
                     <ui:Button Grid.Column="1"
-                               Content="恢复默认"
-                               Command="{Binding RecordCommand}"
+                               Content="{Binding RecordButtonText}"
+                               Command="{Binding BeginRecordingCommand}"
+                               IsEnabled="{Binding IsEnabled}"
+                               Focusable="True"
                                VerticalAlignment="Center"
                                Margin="20,0,0,0" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingCardStyle}"
+                    Visibility="{Binding IsRecording, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="正在等待键盘输入" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="组合键必须包含 Ctrl、Alt、Shift 或 Windows 中至少一个修饰键。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ui:Button Grid.Column="1"
+                               Content="使用默认"
+                               Command="{Binding UseDefaultCommand}"
+                               Margin="12,0,6,0" />
+                    <ui:Button Grid.Column="2"
+                               Content="取消"
+                               Command="{Binding CancelRecordingCommand}" />
                 </Grid>
             </Border>
 
@@ -60,8 +89,8 @@
                 </Grid>
             </Border>
 
-            <ui:InfoBar Title="默认快捷键"
-                        Message="当前版本固定使用 Alt + Shift + T；若被占用，仍可从托盘菜单开始框选翻译。"
+            <ui:InfoBar Title="修改会立即生效"
+                        Message="新组合若已被其他程序占用，屏译会自动恢复上一个可用快捷键。"
                         Severity="Informational"
                         IsOpen="True"
                         Margin="0,10,0,0" />

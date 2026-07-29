@@ -5,6 +5,7 @@
                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:pages="clr-namespace:ScreenTranslator.App.Pages"
+                 xmlns:behaviors="clr-namespace:ScreenTranslator.App.Behaviors"
                  mc:Ignorable="d"
                  Title="屏译"
                  Width="1080"
@@ -14,7 +15,7 @@
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica">
-    <Grid>
+    <Grid behaviors:MouseWheelRouter.IsEnabled="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />

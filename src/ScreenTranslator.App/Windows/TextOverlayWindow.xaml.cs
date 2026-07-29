@@ -1,14 +1,18 @@
 using System.Windows;
 using System.Windows.Media;
+using ScreenTranslator.App.Services.Browser;
 using ScreenTranslator.App.ViewModels;
+using ScreenTranslator.Core.Models;
 using Brush = System.Windows.Media.Brush;
 using Clipboard = System.Windows.Clipboard;
+using WpfRect = System.Windows.Rect;
 
 namespace ScreenTranslator.App.Windows;
 
-public partial class TextOverlayWindow : Window
+public partial class TextOverlayWindow : Window, ITrackedOverlay
 {
     private readonly TranslationResultViewModel _viewModel;
+    private DipRect _trackingBounds;
 
     public TextOverlayWindow()
         : this(new TranslationResultViewModel())
@@ -26,12 +30,19 @@ public partial class TextOverlayWindow : Window
 
     public TranslationResultViewModel ViewModel => _viewModel;
 
-    public void SetBounds(Rect boundsDips)
+    public DipRect TrackingBounds => _trackingBounds;
+
+    public void SetBounds(WpfRect boundsDips)
     {
         Left = boundsDips.Left;
         Top = boundsDips.Top;
         Width = Math.Max(MinWidth, boundsDips.Width);
         Height = Math.Max(MinHeight, boundsDips.Height);
+        _trackingBounds = new DipRect(
+            boundsDips.Left,
+            boundsDips.Top,
+            boundsDips.Width,
+            boundsDips.Height);
     }
 
     public void SetTextStyle(double fontSize, Brush? foreground = null, Brush? background = null)
@@ -52,6 +63,21 @@ public partial class TextOverlayWindow : Window
     {
         RootCard.IsHitTestVisible = interactive;
         ActionBar.Visibility = interactive ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public void MoveTo(DipRect bounds)
+    {
+        _trackingBounds = bounds;
+        Left = bounds.X;
+        Top = bounds.Y;
+    }
+
+    public void SetTrackingVisibility(bool visible)
+    {
+        RootCard.Visibility = visible
+            ? Visibility.Visible
+            : Visibility.Hidden;
+        RootCard.IsHitTestVisible = visible && ActionBar.Visibility == Visibility.Visible;
     }
 
     protected override void OnClosed(EventArgs e)
