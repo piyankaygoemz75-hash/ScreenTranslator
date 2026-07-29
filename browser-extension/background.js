@@ -2,7 +2,7 @@
 
 const HOST_NAME = "com.screentranslator.browser_bridge";
 const RECONNECT_MIN_MS = 1000;
-const RECONNECT_MAX_MS = 30000;
+const RECONNECT_MAX_MS = 5000;
 const browserKind = navigator.userAgent.includes("Edg/") ? "edge" : "chrome";
 
 let nativePort;
@@ -135,6 +135,7 @@ function connectNativeHost() {
 
 function postNative(message) {
   if (nativePort === undefined) {
+    scheduleReconnect();
     return false;
   }
 

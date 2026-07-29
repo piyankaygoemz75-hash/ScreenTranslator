@@ -13,6 +13,11 @@ namespace ScreenTranslator.App.Services;
 
 public sealed partial class ApplicationController
 {
+    private static readonly TimeSpan BrowserFollowStartupTimeout =
+        TimeSpan.FromSeconds(35);
+    private static readonly TimeSpan BrowserFollowRetryInterval =
+        TimeSpan.FromMilliseconds(500);
+
     private static readonly JsonSerializerOptions BrowserJsonOptions =
         CreateBrowserJsonOptions();
 
@@ -74,28 +79,57 @@ public sealed partial class ApplicationController
         {
             monitor = new BrowserWindowEventMonitor(
                 work.CapturedBrowser.Snapshot.Handle);
-            var currentSnapshot = monitor.GetSnapshot();
-            if (currentSnapshot is null)
-            {
-                monitor.Dispose();
-                return;
-            }
+            var startupWaiter = new BrowserFollowStartupWaiter(
+                BrowserFollowStartupTimeout,
+                BrowserFollowRetryInterval);
+            var candidate = await startupWaiter.WaitAsync<BrowserFollowCandidate>(
+                async cancellationToken =>
+                {
+                    var snapshot = monitor.GetSnapshot();
+                    if (snapshot is null)
+                    {
+                        return null;
+                    }
 
-            var match = await QueryMatchingActiveTabAsync(
-                work.CapturedBrowser.Browser,
-                currentSnapshot,
-                CancellationToken.None);
-            if (match is null
+                    var activeTab = await QueryMatchingActiveTabAsync(
+                        work.CapturedBrowser.Browser,
+                        snapshot,
+                        cancellationToken);
+                    return activeTab is null
+                        ? null
+                        : new BrowserFollowCandidate(activeTab.Value, snapshot);
+                },
+                () =>
+                    !_disposed
+                    && generation == Volatile.Read(ref _browserFollowGeneration)
+                    && overlays.Any(overlay => overlay.IsLoaded)
+                    && monitor.GetSnapshot() is not null,
+                () => BrowserIntegration.DetailText =
+                    "译文已显示，正在等待浏览器扩展连接并启用网页跟随…");
+            if (candidate is null
                 || _disposed
                 || generation != Volatile.Read(ref _browserFollowGeneration)
-                || overlays.Any(overlay => !overlay.IsLoaded))
+                || overlays.All(overlay => !overlay.IsLoaded))
             {
                 monitor.Dispose();
+                if (!_disposed
+                    && generation == Volatile.Read(ref _browserFollowGeneration)
+                    && overlays.Any(overlay => overlay.IsLoaded))
+                {
+                    BrowserIntegration.DetailText =
+                        "浏览器扩展暂未连接，本次译文保持静态；连接恢复后下次翻译可继续跟随。";
+                }
+
                 return;
             }
 
+            var activeOverlays = overlays
+                .Where(overlay => overlay.IsLoaded)
+                .ToArray();
             var monitorScale = work.Monitor.ScaleX;
-            var hello = match.Value.Reply.ToHello();
+            var match = candidate.Value.Match;
+            var currentSnapshot = candidate.Value.Snapshot;
+            var hello = match.Reply.ToHello();
             var viewportBounds = CalculateViewportBounds(
                 currentSnapshot,
                 hello,
@@ -106,7 +140,7 @@ public sealed partial class ApplicationController
                 viewportBounds);
             var coordinator = new BrowserFollowCoordinator(
                 session,
-                overlays.Cast<ITrackedOverlay>().ToArray(),
+                activeOverlays.Cast<ITrackedOverlay>().ToArray(),
                 ToCoreDipRect(work.AbsoluteSelection, work.Monitor));
             coordinator.Invalidated += OnBrowserFollowInvalidated;
 
@@ -119,7 +153,7 @@ public sealed partial class ApplicationController
             _browserFollowCoordinator = coordinator;
             _browserWindowMonitor = monitor;
             _browserWindowSnapshot = currentSnapshot;
-            _activeBrowserConnectionId = match.Value.ConnectionId;
+            _activeBrowserConnectionId = match.ConnectionId;
             monitor.Changed += OnBrowserWindowChanged;
             BrowserIntegration.DetailText =
                 $"{BrowserLabel(hello.Browser)} 网页跟随已启用；滚动不会重复 OCR 或调用 DeepSeek。";
@@ -627,6 +661,10 @@ public sealed partial class ApplicationController
     private readonly record struct ActiveTabMatch(
         Guid ConnectionId,
         ActiveTabReply Reply);
+
+    private readonly record struct BrowserFollowCandidate(
+        ActiveTabMatch Match,
+        BrowserWindowSnapshot Snapshot);
 
     private static BrowserKind? ParseBrowserKind(string? browser) =>
         browser?.ToLowerInvariant() switch

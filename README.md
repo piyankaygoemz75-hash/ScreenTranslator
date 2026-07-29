@@ -48,6 +48,8 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 网页滚动只移动已经生成的译文，不会重新截图、OCR 或请求 DeepSeek。切换标签页、导航、缩放、最小化或改变浏览器窗口大小时，旧译文会自动失效。浏览器内置 PDF、内部页面和禁止内容脚本的页面继续使用静态翻译。
 
+桌面程序刚启动而扩展仍在重连时，译文会先立即显示，再在后台自动接入网页跟随，无需重新框选。
+
 ## 隐私
 
 截图只存在于当前进程内存。默认只把 OCR 识别出的文本发送给 DeepSeek；程序不会把截图上传到翻译 API。API Key 不会写入普通配置文件或日志。
