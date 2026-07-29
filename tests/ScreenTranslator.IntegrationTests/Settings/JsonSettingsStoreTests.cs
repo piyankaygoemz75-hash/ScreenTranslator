@@ -1,5 +1,6 @@
 using ScreenTranslator.App.Services.Settings;
 using ScreenTranslator.Core.Settings;
+using ScreenTranslator.IntegrationTests.TestInfrastructure;
 
 namespace ScreenTranslator.IntegrationTests.Settings;
 
@@ -41,6 +42,19 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal(new AppSettings(), actual);
         Assert.False(File.Exists(path));
         Assert.Single(Directory.GetFiles(_directory, "settings.corrupt-*.json"));
+    }
+
+    [Fact]
+    public void Save_Does_Not_Deadlock_When_Shutdown_Blocks_The_Ui_Thread()
+    {
+        var path = Path.Combine(_directory, "shutdown-settings.json");
+        var store = new JsonSettingsStore(path);
+
+        NonPumpingContextTest.Run(
+            () => store.SaveAsync(new AppSettings()).GetAwaiter().GetResult(),
+            TimeSpan.FromSeconds(3));
+
+        Assert.True(File.Exists(path));
     }
 
     public void Dispose()

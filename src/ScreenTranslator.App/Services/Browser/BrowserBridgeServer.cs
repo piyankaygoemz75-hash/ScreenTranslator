@@ -45,7 +45,9 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
-        _acceptLoop ??= AcceptLoopAsync(_shutdown.Token);
+        _acceptLoop ??= Task.Run(
+            () => AcceptLoopAsync(_shutdown.Token),
+            CancellationToken.None);
     }
 
     public async Task SendAsync(
@@ -58,7 +60,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             throw new InvalidOperationException("浏览器连接已断开。");
         }
 
-        await connection.SendAsync(json, cancellationToken);
+        await connection.SendAsync(json, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -71,14 +73,14 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
         _shutdown.Cancel();
         foreach (var connection in _connections.Values)
         {
-            await connection.DisposeAsync();
+            await connection.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_acceptLoop is not null)
         {
             try
             {
-                await _acceptLoop;
+                await _acceptLoop.ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -102,11 +104,11 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
 
             try
             {
-                await pipe.WaitForConnectionAsync(cancellationToken);
+                await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
             {
-                await pipe.DisposeAsync();
+                await pipe.DisposeAsync().ConfigureAwait(false);
                 throw;
             }
 
@@ -129,7 +131,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             {
                 var json = await NativeMessagingHost.ReadAsync(
                     connection.Stream,
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
                 if (json is null)
                 {
                     return;
@@ -151,7 +153,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
         finally
         {
             _connections.TryRemove(connection.Id, out _);
-            await connection.DisposeAsync();
+            await connection.DisposeAsync().ConfigureAwait(false);
             ConnectionClosed?.Invoke(
                 this,
                 new BrowserBridgeConnectionEventArgs(connection.Id));
@@ -169,10 +171,13 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
 
         public async Task SendAsync(string json, CancellationToken cancellationToken)
         {
-            await _writeGate.WaitAsync(cancellationToken);
+            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await NativeMessagingHost.WriteAsync(Stream, json, cancellationToken);
+                await NativeMessagingHost.WriteAsync(
+                    Stream,
+                    json,
+                    cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -188,7 +193,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             }
 
             _writeGate.Dispose();
-            await Stream.DisposeAsync();
+            await Stream.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

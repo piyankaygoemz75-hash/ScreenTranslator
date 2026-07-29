@@ -472,18 +472,21 @@ public sealed partial class ApplicationController
             return;
         }
 
-        _browserBridgeServer.MessageReceived -= OnBrowserBridgeMessageReceived;
-        _browserBridgeServer.ConnectionClosed -= OnBrowserBridgeConnectionClosed;
-        try
-        {
-            _browserBridgeServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        }
-        catch
-        {
-            // Application shutdown must continue if a browser closes concurrently.
-        }
-
+        var server = _browserBridgeServer;
+        server.MessageReceived -= OnBrowserBridgeMessageReceived;
+        server.ConnectionClosed -= OnBrowserBridgeConnectionClosed;
         _browserBridgeServer = null;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await server.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // The operating system will release remaining pipe handles on exit.
+            }
+        });
     }
 
     private static DipRect CalculateViewportBounds(

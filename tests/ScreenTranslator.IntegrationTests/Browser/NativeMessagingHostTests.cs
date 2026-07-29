@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using ScreenTranslator.App.Services.Browser;
+using ScreenTranslator.IntegrationTests.TestInfrastructure;
 
 namespace ScreenTranslator.IntegrationTests.Browser;
 
@@ -113,6 +114,19 @@ public sealed class NativeMessagingHostTests
         Assert.Equal(
             """{"type":"ready"}""",
             await readTask);
+    }
+
+    [Fact]
+    public void Bridge_Dispose_Does_Not_Deadlock_A_Shutting_Down_Ui_Thread()
+    {
+        NonPumpingContextTest.Run(
+            () =>
+            {
+                var server = new BrowserBridgeServer();
+                server.Start();
+                server.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            },
+            TimeSpan.FromSeconds(3));
     }
 
     private static MemoryStream CreateMessageStream(string json)

@@ -1026,6 +1026,7 @@ public sealed partial class ApplicationController : IDisposable
                 _mainWindow.IsApplicationShuttingDown = true;
             }
 
+            _tray.Dispose();
             _application.Shutdown();
         }
     }
@@ -1038,9 +1039,11 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         _disposed = true;
+        _tray.Dispose();
         try
         {
-            _settingsStore.SaveAsync(CollectSettings()).GetAwaiter().GetResult();
+            var saveTask = _settingsStore.SaveAsync(CollectSettings());
+            _ = saveTask.Wait(TimeSpan.FromSeconds(1));
         }
         catch
         {
@@ -1051,7 +1054,6 @@ public sealed partial class ApplicationController : IDisposable
         DisposeBrowserIntegration();
         _sessions.Dispose();
         _hotkey.Dispose();
-        _tray.Dispose();
         _captureGate.Dispose();
         _settingsGate.Dispose();
     }

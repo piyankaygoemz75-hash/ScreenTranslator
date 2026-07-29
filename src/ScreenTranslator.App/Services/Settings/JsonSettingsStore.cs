@@ -36,11 +36,12 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         try
         {
-            await using var stream = File.OpenRead(_settingsPath);
+            using var stream = File.OpenRead(_settingsPath);
             return await JsonSerializer.DeserializeAsync<AppSettings>(
                        stream,
                        SerializerOptions,
                        cancellationToken)
+                       .ConfigureAwait(false)
                    ?? new AppSettings();
         }
         catch (JsonException)
@@ -64,16 +65,21 @@ public sealed class JsonSettingsStore : ISettingsStore
         Directory.CreateDirectory(directory);
 
         var temporaryPath = _settingsPath + ".tmp";
-        await using (var stream = new FileStream(
-                         temporaryPath,
-                         FileMode.Create,
-                         FileAccess.Write,
-                         FileShare.None,
-                         bufferSize: 4096,
-                         useAsync: true))
+        using (var stream = new FileStream(
+                   temporaryPath,
+                   FileMode.Create,
+                   FileAccess.Write,
+                   FileShare.None,
+                   bufferSize: 4096,
+                   useAsync: true))
         {
-            await JsonSerializer.SerializeAsync(stream, settings, SerializerOptions, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
+            await JsonSerializer.SerializeAsync(
+                    stream,
+                    settings,
+                    SerializerOptions,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
         File.Move(temporaryPath, _settingsPath, overwrite: true);
