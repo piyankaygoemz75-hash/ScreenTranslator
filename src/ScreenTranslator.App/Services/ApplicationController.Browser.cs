@@ -409,6 +409,20 @@ public sealed partial class ApplicationController
         _browserWindowSnapshot = null;
     }
 
+    private void RemoveBrowserTrackedOverlay(TextOverlayWindow overlay)
+    {
+        var coordinator = _browserFollowCoordinator;
+        if (coordinator is null || !coordinator.RemoveOverlay(overlay))
+        {
+            return;
+        }
+
+        if (coordinator.OverlayCount == 0)
+        {
+            StopBrowserFollowing(hideOverlays: false);
+        }
+    }
+
     private void OnOpenBrowserExtensionsRequested(
         object? sender,
         BrowserKind browser)

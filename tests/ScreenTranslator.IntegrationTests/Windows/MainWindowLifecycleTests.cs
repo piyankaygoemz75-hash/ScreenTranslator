@@ -31,6 +31,23 @@ public sealed class MainWindowLifecycleTests
             window.Close();
 
             Assert.True(wasClosed);
+
+            var overlayViewModel = new TranslationResultViewModel();
+            var overlay = new TextOverlayWindow(overlayViewModel);
+            var clearAllCount = 0;
+            overlayViewModel.ClearAllRequested += (_, _) => clearAllCount++;
+
+            overlay.Show();
+            overlay.SetSourceWindowActive(false);
+            Assert.False(overlay.IsVisible);
+
+            overlay.SetSourceWindowActive(true);
+            Assert.True(overlay.IsVisible);
+
+            overlayViewModel.ClearAllCommand.Execute(null);
+            Assert.Equal(1, clearAllCount);
+            overlay.Close();
+
             application.Shutdown();
         });
     }

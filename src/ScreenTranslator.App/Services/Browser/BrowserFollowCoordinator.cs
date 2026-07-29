@@ -20,7 +20,7 @@ public sealed class BrowserFollowInvalidatedEventArgs(string reason) : EventArgs
 public sealed class BrowserFollowCoordinator
 {
     private readonly BrowserTrackingSession _session;
-    private readonly IReadOnlyList<ITrackedOverlay> _overlays;
+    private readonly List<ITrackedOverlay> _overlays;
     private DipRect _selectionBounds;
     private bool _invalidated;
 
@@ -30,7 +30,7 @@ public sealed class BrowserFollowCoordinator
         DipRect selectionBounds)
     {
         _session = session;
-        _overlays = overlays;
+        _overlays = overlays.ToList();
         _selectionBounds = selectionBounds;
     }
 
@@ -43,6 +43,14 @@ public sealed class BrowserFollowCoordinator
     public int BrowserWindowId => _session.BrowserWindowId;
 
     public int TabId => _session.TabId;
+
+    public int OverlayCount => _overlays.Count;
+
+    public bool RemoveOverlay(ITrackedOverlay overlay)
+    {
+        ArgumentNullException.ThrowIfNull(overlay);
+        return _overlays.Remove(overlay);
+    }
 
     public void Handle(BrowserMessage message)
     {
@@ -81,7 +89,7 @@ public sealed class BrowserFollowCoordinator
             _selectionBounds,
             deltaXDip,
             deltaYDip);
-        foreach (var overlay in _overlays)
+        foreach (var overlay in _overlays.ToArray())
         {
             overlay.MoveTo(Translate(
                 overlay.TrackingBounds,
@@ -98,7 +106,7 @@ public sealed class BrowserFollowCoordinator
         }
 
         _invalidated = true;
-        foreach (var overlay in _overlays)
+        foreach (var overlay in _overlays.ToArray())
         {
             overlay.SetTrackingVisibility(false);
         }
@@ -110,7 +118,7 @@ public sealed class BrowserFollowCoordinator
 
     private void ApplyMove(BrowserSessionUpdate update)
     {
-        foreach (var overlay in _overlays)
+        foreach (var overlay in _overlays.ToArray())
         {
             var result = update.ScrollContainerDip is { } container
                 ? OverlayFollowCalculator.ApplyNestedScroll(

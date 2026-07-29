@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using ScreenTranslator.App.Services.Browser;
+using ScreenTranslator.App.Services.Overlays;
 using ScreenTranslator.App.ViewModels;
 using ScreenTranslator.Core.Models;
 using Brush = System.Windows.Media.Brush;
@@ -9,10 +10,12 @@ using WpfRect = System.Windows.Rect;
 
 namespace ScreenTranslator.App.Windows;
 
-public partial class TextOverlayWindow : Window, ITrackedOverlay
+public partial class TextOverlayWindow : Window, ITrackedOverlay, IOverlayFocusTarget
 {
     private readonly TranslationResultViewModel _viewModel;
+    private readonly OverlayVisibilityState _visibility = new();
     private DipRect _trackingBounds;
+    private bool _closed;
 
     public TextOverlayWindow()
         : this(new TranslationResultViewModel())
@@ -61,8 +64,8 @@ public partial class TextOverlayWindow : Window, ITrackedOverlay
 
     public void SetInteractive(bool interactive)
     {
-        RootCard.IsHitTestVisible = interactive;
         ActionBar.Visibility = interactive ? Visibility.Visible : Visibility.Collapsed;
+        ApplyVisibility();
     }
 
     public void MoveTo(DipRect bounds)
@@ -72,16 +75,27 @@ public partial class TextOverlayWindow : Window, ITrackedOverlay
         Top = bounds.Y;
     }
 
+    public void SetUserVisibility(bool visible)
+    {
+        _visibility.UserVisible = visible;
+        ApplyVisibility();
+    }
+
+    public void SetSourceWindowActive(bool active)
+    {
+        _visibility.SourceWindowActive = active;
+        ApplyVisibility();
+    }
+
     public void SetTrackingVisibility(bool visible)
     {
-        RootCard.Visibility = visible
-            ? Visibility.Visible
-            : Visibility.Hidden;
-        RootCard.IsHitTestVisible = visible && ActionBar.Visibility == Visibility.Visible;
+        _visibility.TrackingVisible = visible;
+        ApplyVisibility();
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _closed = true;
         _viewModel.CopyRequested -= ViewModel_OnCopyRequested;
         _viewModel.CloseRequested -= ViewModel_OnCloseRequested;
         base.OnClosed(e);
@@ -96,4 +110,39 @@ public partial class TextOverlayWindow : Window, ITrackedOverlay
     }
 
     private void ViewModel_OnCloseRequested(object? sender, EventArgs e) => Close();
+
+    private void OverlayContextMenu_OnOpened(object sender, RoutedEventArgs e)
+    {
+        _visibility.ContextMenuOpen = true;
+        ApplyVisibility();
+    }
+
+    private void OverlayContextMenu_OnClosed(object sender, RoutedEventArgs e)
+    {
+        _visibility.ContextMenuOpen = false;
+        ApplyVisibility();
+    }
+
+    private void ApplyVisibility()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        if (_visibility.ShouldShow)
+        {
+            RootCard.Visibility = Visibility.Visible;
+            RootCard.IsHitTestVisible = ActionBar.Visibility == Visibility.Visible;
+            if (IsLoaded && !IsVisible)
+            {
+                Show();
+            }
+        }
+        else
+        {
+            RootCard.IsHitTestVisible = false;
+            Hide();
+        }
+    }
 }

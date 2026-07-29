@@ -7,6 +7,7 @@ using ScreenTranslator.App.Services.Browser;
 using ScreenTranslator.App.Services.Capture;
 using ScreenTranslator.App.Services.Hotkeys;
 using ScreenTranslator.App.Services.Ocr;
+using ScreenTranslator.App.Services.Overlays;
 using ScreenTranslator.App.Services.Settings;
 using ScreenTranslator.App.Services.Tray;
 using ScreenTranslator.App.ViewModels;
@@ -42,8 +43,11 @@ public sealed partial class ApplicationController : IDisposable
     private readonly SemaphoreSlim _captureGate = new(1, 1);
     private readonly SemaphoreSlim _settingsGate = new(1, 1);
     private readonly List<Window> _resultWindows = [];
+    private readonly List<TextOverlayWindow> _activeTextOverlays = [];
 
     private MainWindow? _mainWindow;
+    private ForegroundWindowMonitor? _foregroundWindowMonitor;
+    private OverlayFocusCoordinator? _overlayFocusCoordinator;
     private AppSettings _persistedSettings = new();
     private LastTranslationWork? _lastWork;
     private bool _overlaysVisible = true;
@@ -186,6 +190,7 @@ public sealed partial class ApplicationController : IDisposable
             MainWindow.IsCaptureAvailable = false;
             MainWindow.StatusText = "正在截取屏幕…";
 
+            var sourceWindowHandle = ForegroundWindowMonitor.CaptureForegroundRootWindow();
             var capturedBrowser = BrowserWindowEventMonitor.CaptureForegroundBrowser();
             CloseResultWindows();
             _mainWindow?.Hide();
@@ -247,7 +252,8 @@ public sealed partial class ApplicationController : IDisposable
                 selection.Capture.Monitor,
                 selection.Bounds,
                 blocks,
-                capturedBrowser);
+                capturedBrowser,
+                sourceWindowHandle);
 
             _sessions.TryTransition(session.Id, TranslationSessionState.Translating);
             await TranslateAndShowAsync(_lastWork, settings, session);
@@ -483,6 +489,7 @@ public sealed partial class ApplicationController : IDisposable
             overlay.SetTextStyle(estimatedFontSize);
             overlay.SetInteractive(true);
             viewModel.RetryRequested += (_, _) => _ = RetryLastAsync();
+            viewModel.ClearAllRequested += OnOverlayClearAllRequested;
             viewModel.SwitchModeRequested += (_, _) =>
             {
                 CloseResultWindows();
@@ -491,10 +498,13 @@ public sealed partial class ApplicationController : IDisposable
                     result,
                     settings with { DisplayMode = DisplayMode.SidePanel });
             };
+            overlay.Closed += OnTextOverlayClosed;
             TrackAndShow(overlay);
+            _activeTextOverlays.Add(overlay);
             overlays.Add(overlay);
         }
 
+        StartOverlayFocusTracking(work.SourceWindowHandle, overlays);
         return overlays;
     }
 
@@ -518,6 +528,7 @@ public sealed partial class ApplicationController : IDisposable
 
     private void CloseResultWindows()
     {
+        StopOverlayFocusTracking();
         StopBrowserFollowing(hideOverlays: false);
         foreach (var window in _resultWindows.ToArray())
         {
@@ -525,14 +536,19 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         _resultWindows.Clear();
+        _activeTextOverlays.Clear();
     }
 
     private void ToggleOverlays()
     {
         _overlaysVisible = !_overlaysVisible;
-        foreach (var window in _resultWindows)
+        foreach (var window in _resultWindows.ToArray())
         {
-            if (_overlaysVisible)
+            if (window is TextOverlayWindow overlay)
+            {
+                overlay.SetUserVisibility(_overlaysVisible);
+            }
+            else if (_overlaysVisible)
             {
                 window.Show();
             }
@@ -541,6 +557,74 @@ public sealed partial class ApplicationController : IDisposable
                 window.Hide();
             }
         }
+    }
+
+    private void StartOverlayFocusTracking(
+        IntPtr sourceWindowHandle,
+        IReadOnlyList<TextOverlayWindow> overlays)
+    {
+        StopOverlayFocusTracking();
+        if (sourceWindowHandle == IntPtr.Zero || overlays.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _overlayFocusCoordinator = new OverlayFocusCoordinator(
+                sourceWindowHandle,
+                overlays);
+            _foregroundWindowMonitor = new ForegroundWindowMonitor();
+            _foregroundWindowMonitor.Changed += OnForegroundWindowChanged;
+            _overlayFocusCoordinator.HandleForegroundChanged(
+                ForegroundWindowMonitor.CaptureForegroundRootWindow());
+        }
+        catch (InvalidOperationException)
+        {
+            StopOverlayFocusTracking();
+        }
+    }
+
+    private void OnForegroundWindowChanged(
+        object? sender,
+        ForegroundWindowChangedEventArgs e)
+    {
+        _application.Dispatcher.BeginInvoke(() =>
+            _overlayFocusCoordinator?.HandleForegroundChanged(e.WindowHandle));
+    }
+
+    private void OnOverlayClearAllRequested(object? sender, EventArgs e) =>
+        CloseResultWindows();
+
+    private void OnTextOverlayClosed(object? sender, EventArgs e)
+    {
+        if (sender is not TextOverlayWindow overlay)
+        {
+            return;
+        }
+
+        overlay.Closed -= OnTextOverlayClosed;
+        overlay.ViewModel.ClearAllRequested -= OnOverlayClearAllRequested;
+        _activeTextOverlays.Remove(overlay);
+        _overlayFocusCoordinator?.Remove(overlay);
+        RemoveBrowserTrackedOverlay(overlay);
+
+        if (_activeTextOverlays.Count == 0)
+        {
+            StopOverlayFocusTracking();
+        }
+    }
+
+    private void StopOverlayFocusTracking()
+    {
+        if (_foregroundWindowMonitor is not null)
+        {
+            _foregroundWindowMonitor.Changed -= OnForegroundWindowChanged;
+            _foregroundWindowMonitor.Dispose();
+            _foregroundWindowMonitor = null;
+        }
+
+        _overlayFocusCoordinator = null;
     }
 
     private async Task<ConnectionTestResult> TestConnectionAsync(
@@ -1064,7 +1148,8 @@ public sealed partial class ApplicationController : IDisposable
         ScreenMonitor Monitor,
         PixelRect AbsoluteSelection,
         IReadOnlyList<OcrBlock> Blocks,
-        CapturedBrowserWindow? CapturedBrowser);
+        CapturedBrowserWindow? CapturedBrowser,
+        IntPtr SourceWindowHandle);
 
     private sealed class InMemorySecretStore(string apiKey) : ISecretStore
     {

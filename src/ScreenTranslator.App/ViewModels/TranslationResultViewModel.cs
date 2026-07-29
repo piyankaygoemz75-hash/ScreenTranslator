@@ -28,6 +28,8 @@ public sealed class TranslationResultViewModel : ObservableObject
             () => SwitchModeRequested?.Invoke(this, EventArgs.Empty));
         CloseCommand = new RelayCommand(
             () => CloseRequested?.Invoke(this, EventArgs.Empty));
+        ClearAllCommand = new RelayCommand(
+            () => ClearAllRequested?.Invoke(this, EventArgs.Empty));
     }
 
     public string SourceText
@@ -102,6 +104,8 @@ public sealed class TranslationResultViewModel : ObservableObject
 
     public RelayCommand CloseCommand { get; }
 
+    public RelayCommand ClearAllCommand { get; }
+
     public event EventHandler<string>? CopyRequested;
 
     public event EventHandler? RetryRequested;
@@ -109,4 +113,6 @@ public sealed class TranslationResultViewModel : ObservableObject
     public event EventHandler? SwitchModeRequested;
 
     public event EventHandler? CloseRequested;
+
+    public event EventHandler? ClearAllRequested;
 }

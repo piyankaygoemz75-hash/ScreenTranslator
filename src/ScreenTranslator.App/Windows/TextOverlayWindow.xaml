@@ -20,6 +20,18 @@
             CornerRadius="8"
             Padding="9,6"
             Opacity="0.96">
+        <Border.ContextMenu>
+            <ContextMenu DataContext="{Binding PlacementTarget.DataContext,
+                                              RelativeSource={RelativeSource Self}}"
+                         Opened="OverlayContextMenu_OnOpened"
+                         Closed="OverlayContextMenu_OnClosed">
+                <MenuItem Header="清除此条译文"
+                          Command="{Binding CloseCommand}" />
+                <MenuItem Header="清除全部译文"
+                          Command="{Binding ClearAllCommand}" />
+            </ContextMenu>
+        </Border.ContextMenu>
+
         <Grid>
             <TextBlock x:Name="TranslationText"
                        Text="{Binding TranslatedText}"

@@ -74,8 +74,23 @@ public sealed class BrowserFollowCoordinatorTests
         Assert.Equal(185, overlay.TrackingBounds.Y);
     }
 
+    [Fact]
+    public void Removed_Overlay_No_Longer_Receives_Scroll_Updates()
+    {
+        var removed = new FakeOverlay(new DipRect(100, 200, 220, 40));
+        var remaining = new FakeOverlay(new DipRect(100, 260, 220, 40));
+        var coordinator = CreateCoordinator(removed, remaining);
+
+        Assert.True(coordinator.RemoveOverlay(removed));
+        coordinator.Handle(CreateScroll(deltaYCss: 50));
+
+        Assert.Equal(200, removed.TrackingBounds.Y);
+        Assert.Equal(210, remaining.TrackingBounds.Y);
+        Assert.Equal(1, coordinator.OverlayCount);
+    }
+
     private static BrowserFollowCoordinator CreateCoordinator(
-        ITrackedOverlay overlay)
+        params ITrackedOverlay[] overlays)
     {
         var hello = new BrowserHello(
             BrowserKind.Chrome,
@@ -92,7 +107,7 @@ public sealed class BrowserFollowCoordinatorTests
             viewportBoundsDip: new DipRect(0, 80, 1200, 800));
         return new BrowserFollowCoordinator(
             session,
-            [overlay],
+            overlays,
             selectionBounds: new DipRect(80, 120, 300, 300));
     }
 
