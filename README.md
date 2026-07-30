@@ -4,6 +4,14 @@
 
 > 当前项目仍在积极开发中。首次使用前需要自行申请并配置 DeepSeek API Key。
 
+## 安装
+
+普通用户建议到 [Releases](https://github.com/piyankaygoemz75-hash/ScreenTranslator/releases) 下载最新版 `ScreenTranslator-Setup-x64.exe`，双击即可安装，不需要管理员权限，也不需要另外安装 .NET。
+
+安装程序会自动注册 Chrome / Edge 与桌面程序之间的连接组件。受浏览器安全策略限制，扩展本身仍需在软件“常规”页按引导确认加载一次。详细步骤、便携版用法和卸载说明见 [安装指南](docs/installation.md)。
+
+当前公开构建尚未购买代码签名证书，因此 Windows SmartScreen 可能显示“未知发布者”。请只从本仓库 Release 下载，并用同一页面的 `SHA256SUMS.txt` 核对文件。
+
 ## 功能
 
 - 可录制和保存的全局快捷键（默认 `Alt + Shift + T`）
@@ -14,6 +22,7 @@
 - 译文底板在 100% 设置下完全不透明，降低与复杂页面文字混叠
 - 原位译文支持右键清除此条或清除全部；切换到其他应用时自动隐藏，切回来源窗口后恢复
 - Chrome / Edge 普通网页原位译文滚动跟随
+- 连续框选：不中断地框选多个区域，按顺序识别和翻译，最多排队 5 条
 - 可拖动、可滚轮滚动且操作栏固定可见的旁边浮窗
 - Windows 11 Fluent、Mica、浅色和深色主题
 - API Key 使用当前 Windows 用户范围的 DPAPI 加密
@@ -41,6 +50,12 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 默认接口地址为 `https://api.deepseek.com`。短文本翻译使用非思考模式和 JSON 输出，以降低延迟并保持 OCR 文本块与译文一一对应。
 
+## 连续框选
+
+在“常规”页点击“连续框选”，或在托盘菜单选择“连续框选翻译”。每次松开鼠标后，当前区域会立即进入队列，软件同时开始下一次框选；OCR 和 DeepSeek 请求按框选顺序逐条处理，避免并发请求造成结果错序或触发限流。
+
+按 `Esc` 或单击鼠标右键只会结束继续框选，已经排队的内容仍会翻译完成。队列最多容纳 5 条，满载时会等待前一条处理完再继续。旁显模式会把多条结果汇总到一个可滚动面板，覆盖模式则保留每一条译文。
+
 ## 启用 Chrome / Edge 网页跟随
 
 1. 启动屏译，在“常规”页确认“网页译文跟随”已开启。
@@ -59,13 +74,13 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 截图只存在于当前进程内存。默认只把 OCR 识别出的文本发送给 DeepSeek；程序不会把截图上传到翻译 API。API Key 不会写入普通配置文件或日志。
 
-## 发布
+## 从源码构建发布包
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 publish src\ScreenTranslator.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist\ScreenTranslator-win-x64
+powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.0
 ```
 
-自包含程序位于 `dist\ScreenTranslator-win-x64\ScreenTranslator.exe`，目标电脑无需另装 .NET。
+脚本会生成自包含程序、便携 ZIP 和浏览器扩展 ZIP。安装器还需要 Inno Setup 6；正式 tag 的 GitHub Actions 会自动构建安装器、执行静默安装/卸载测试、生成 SHA-256 并发布 Release。
 
 ## 已知限制
 

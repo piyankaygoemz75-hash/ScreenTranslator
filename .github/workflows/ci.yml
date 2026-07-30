@@ -33,3 +33,29 @@ jobs:
 
       - name: Test browser extension
         run: node --test browser-extension/tests/content.test.js browser-extension/tests/document-state.test.js
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build distributable packages
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content "./src/ScreenTranslator.App/ScreenTranslator.App.csproj"
+          $version = ($project.Project.PropertyGroup.Version | Select-Object -First 1)
+          ./eng/build-release.ps1 -Version $version
+          $root = (Resolve-Path "./artifacts/release/v$version").Path
+          $env:SCREEN_TRANSLATOR_VERSION = $version
+          $env:SCREEN_TRANSLATOR_PUBLISH_DIR = Join-Path $root "publish"
+          $env:SCREEN_TRANSLATOR_ARTIFACT_DIR = Join-Path $root "artifacts"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "./installer/ScreenTranslator.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./eng/write-checksums.ps1 -ArtifactDirectory $env:SCREEN_TRANSLATOR_ARTIFACT_DIR
+          ./eng/test-installer.ps1 -InstallerPath (
+            Join-Path $env:SCREEN_TRANSLATOR_ARTIFACT_DIR "ScreenTranslator-Setup-x64.exe")
+
+      - name: Upload distributable packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenTranslator-main
+          path: artifacts/release/v*/artifacts/*
+          if-no-files-found: error

@@ -16,6 +16,35 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        var maintenanceAction = MaintenanceCommand.Parse(e.Args);
+        if (maintenanceAction != MaintenanceAction.None)
+        {
+            try
+            {
+                var registration =
+                    new NativeMessagingRegistrationService();
+                if (maintenanceAction
+                    == MaintenanceAction.RegisterBrowserHost)
+                {
+                    await registration.RegisterAsync();
+                }
+                else
+                {
+                    await registration.UnregisterAsync();
+                }
+
+                Shutdown();
+            }
+            catch (Exception exception)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"ScreenTranslator maintenance command failed: {exception.Message}");
+                Shutdown(1);
+            }
+
+            return;
+        }
+
         if (NativeMessagingHost.IsBrowserInvocation(e.Args))
         {
             try
