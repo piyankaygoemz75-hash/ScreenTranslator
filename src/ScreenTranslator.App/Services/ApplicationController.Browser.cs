@@ -22,6 +22,8 @@ public sealed partial class ApplicationController
         CreateBrowserJsonOptions();
 
     private readonly ConcurrentDictionary<Guid, BrowserKind> _browserConnections = new();
+    private readonly Dictionary<BrowserKind, BrowserInstallation>
+        _browserInstallations = [];
     private readonly ConcurrentDictionary<string, TaskCompletionSource<ActiveTabReply>>
         _pendingActiveTabQueries = new();
 
@@ -45,6 +47,24 @@ public sealed partial class ApplicationController
             OnOpenBrowserExtensionsRequested;
         BrowserIntegration.OpenExtensionFolderRequested +=
             OnOpenExtensionFolderRequested;
+        BrowserIntegration.InstallExtensionRequested +=
+            OnInstallExtensionRequested;
+        BrowserIntegration.RepairBridgeRequested +=
+            OnRepairBrowserBridgeRequested;
+
+        var detector = new BrowserInstallationDetector();
+        foreach (var browser in new[]
+                 {
+                     BrowserKind.Chrome,
+                     BrowserKind.Edge,
+                 })
+        {
+            var installation = detector.Detect(browser);
+            _browserInstallations[browser] = installation;
+            BrowserIntegration.UpdateDetected(
+                browser,
+                installation.IsInstalled);
+        }
 
         try
         {
@@ -61,6 +81,8 @@ public sealed partial class ApplicationController
                 ("error", exception.Message));
             BrowserIntegration.DetailText =
                 $"网页跟随桥接暂不可用：{exception.Message}";
+            BrowserIntegration.SetBridgeError(
+                $"网页跟随桥接暂不可用：{exception.Message}");
         }
     }
 
@@ -611,6 +633,79 @@ public sealed partial class ApplicationController
         }
     }
 
+    private void OnInstallExtensionRequested(
+        object? sender,
+        BrowserKind browser)
+    {
+        var installation = _browserInstallations.GetValueOrDefault(browser);
+        if (installation is null || !installation.IsInstalled)
+        {
+            BrowserIntegration.DetailText =
+                $"{BrowserLabel(browser)} 未安装，无法加载扩展。";
+            return;
+        }
+
+        var folder = FindExtensionFolder();
+        if (folder is null)
+        {
+            BrowserIntegration.SetBridgeError(
+                "未找到浏览器扩展文件，请重新安装完整版本。");
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(folder);
+            OnOpenBrowserExtensionsRequested(this, browser);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folder}\"",
+                UseShellExecute = true,
+            });
+            BrowserIntegration.SetWaitingForConnection(browser);
+            BrowserIntegration.DetailText =
+                $"扩展目录已复制并打开。请在 {BrowserLabel(browser)} 中开启开发者模式，选择“加载已解压的扩展”，然后选中该目录。";
+        }
+        catch (Exception exception)
+        {
+            BrowserIntegration.SetBridgeError(
+                $"无法启动扩展安装引导：{exception.Message}");
+        }
+    }
+
+    private async Task OnRepairBrowserBridgeRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_nativeMessagingRegistration is null)
+        {
+            BrowserIntegration.SetBridgeError(
+                "浏览器连接服务尚未初始化。");
+            return;
+        }
+
+        try
+        {
+            await _nativeMessagingRegistration.RepairAsync();
+            foreach (var installation in _browserInstallations.Values)
+            {
+                BrowserIntegration.UpdateConnection(
+                    installation.Browser,
+                    _browserConnections.Values.Any(
+                        value => value == installation.Browser));
+            }
+
+            BrowserIntegration.DetailText =
+                "本机连接已修复。已加载的扩展会自动重连。";
+        }
+        catch (Exception exception)
+        {
+            BrowserIntegration.SetBridgeError(
+                $"修复连接失败：{exception.Message}");
+        }
+    }
+
     private void DisposeBrowserIntegration()
     {
         StopBrowserFollowing(hideOverlays: false);
@@ -618,6 +713,10 @@ public sealed partial class ApplicationController
             OnOpenBrowserExtensionsRequested;
         BrowserIntegration.OpenExtensionFolderRequested -=
             OnOpenExtensionFolderRequested;
+        BrowserIntegration.InstallExtensionRequested -=
+            OnInstallExtensionRequested;
+        BrowserIntegration.RepairBridgeRequested -=
+            OnRepairBrowserBridgeRequested;
 
         if (_browserBridgeServer is null)
         {

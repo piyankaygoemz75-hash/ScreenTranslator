@@ -44,9 +44,9 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 ## 启用 Chrome / Edge 网页跟随
 
 1. 启动屏译，在“常规”页确认“网页译文跟随”已开启。
-2. 点击“打开扩展文件夹”。
-3. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式。
-4. 选择“加载已解压的扩展”，加载发布目录中的 `browser-extension` 文件夹。
+2. 点击“安装到 Chrome”或“安装到 Edge”；程序会自动打开扩展页和扩展目录，并复制目录路径。
+3. 在扩展页开启开发者模式。
+4. 选择“加载已解压的扩展”，选中程序打开的 `browser-extension` 文件夹。
 5. 浏览器状态显示“已连接”后，在普通网页上使用“原位覆盖”翻译。
 
 网页滚动只移动已经生成的译文，不会重新截图、OCR 或请求 DeepSeek。切换标签页、导航、缩放、最小化或改变浏览器窗口大小时，旧译文会自动失效。浏览器内置 PDF、内部页面和禁止内容脚本的页面继续使用静态翻译。

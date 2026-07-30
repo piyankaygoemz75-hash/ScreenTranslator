@@ -41,6 +41,25 @@ public sealed class NativeMessagingRegistrationServiceTests : IDisposable
         Assert.All(
             registry.Writes,
             entry => Assert.Equal(manifestPath, entry.ManifestPath));
+        var status = await service.GetStatusAsync();
+        Assert.True(status.IsHealthy);
+    }
+
+    [Fact]
+    public async Task UnregisterAsync_Removes_Both_Registrations_And_Manifest()
+    {
+        var registry = new RecordingRegistry();
+        var service = new NativeMessagingRegistrationService(
+            registry,
+            _temporaryDirectory,
+            Path.Combine(_temporaryDirectory, "ScreenTranslator.exe"));
+        var manifestPath = await service.RegisterAsync();
+
+        await service.UnregisterAsync();
+
+        Assert.False(File.Exists(manifestPath));
+        Assert.Contains(BrowserKind.Chrome, registry.Deletes);
+        Assert.Contains(BrowserKind.Edge, registry.Deletes);
     }
 
     public void Dispose()
@@ -55,11 +74,31 @@ public sealed class NativeMessagingRegistrationServiceTests : IDisposable
     {
         public List<RegistryWrite> Writes { get; } = [];
 
+        public List<BrowserKind> Deletes { get; } = [];
+
+        private readonly Dictionary<BrowserKind, string> _paths = [];
+
         public void SetHostManifest(
             BrowserKind browser,
             string hostName,
-            string manifestPath) =>
+            string manifestPath)
+        {
+            _paths[browser] = manifestPath;
             Writes.Add(new RegistryWrite(browser, hostName, manifestPath));
+        }
+
+        public string? GetHostManifest(
+            BrowserKind browser,
+            string hostName) =>
+            _paths.GetValueOrDefault(browser);
+
+        public void DeleteHostManifest(
+            BrowserKind browser,
+            string hostName)
+        {
+            _paths.Remove(browser);
+            Deletes.Add(browser);
+        }
     }
 
     private sealed record RegistryWrite(

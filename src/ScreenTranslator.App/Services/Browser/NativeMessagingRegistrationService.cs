@@ -8,6 +8,10 @@ namespace ScreenTranslator.App.Services.Browser;
 public interface INativeMessagingRegistry
 {
     void SetHostManifest(BrowserKind browser, string hostName, string manifestPath);
+
+    string? GetHostManifest(BrowserKind browser, string hostName);
+
+    void DeleteHostManifest(BrowserKind browser, string hostName);
 }
 
 public sealed class WindowsNativeMessagingRegistry : INativeMessagingRegistry
@@ -26,7 +30,40 @@ public sealed class WindowsNativeMessagingRegistry : INativeMessagingRegistry
                             $"无法创建浏览器注册表项：{keyPath}");
         key.SetValue(null, manifestPath, RegistryValueKind.String);
     }
+
+    public string? GetHostManifest(
+        BrowserKind browser,
+        string hostName)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(
+            GetKeyPath(browser, hostName));
+        return key?.GetValue(null) as string;
+    }
+
+    public void DeleteHostManifest(
+        BrowserKind browser,
+        string hostName)
+    {
+        Registry.CurrentUser.DeleteSubKeyTree(
+            GetKeyPath(browser, hostName),
+            throwOnMissingSubKey: false);
+    }
+
+    private static string GetKeyPath(
+        BrowserKind browser,
+        string hostName)
+    {
+        var vendor = browser == BrowserKind.Chrome
+            ? @"Software\Google\Chrome"
+            : @"Software\Microsoft\Edge";
+        return $@"{vendor}\NativeMessagingHosts\{hostName}";
+    }
 }
+
+public sealed record NativeMessagingRegistrationStatus(
+    bool IsHealthy,
+    string ManifestPath,
+    string? ErrorMessage);
 
 public sealed class NativeMessagingRegistrationService
 {
@@ -89,6 +126,73 @@ public sealed class NativeMessagingRegistrationService
         _registry.SetHostManifest(BrowserKind.Chrome, HostName, manifestPath);
         _registry.SetHostManifest(BrowserKind.Edge, HostName, manifestPath);
         return manifestPath;
+    }
+
+    public Task<NativeMessagingRegistrationStatus> GetStatusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var manifestPath = Path.Combine(
+            _manifestDirectory,
+            "native-host.json");
+        var chromePath = _registry.GetHostManifest(
+            BrowserKind.Chrome,
+            HostName);
+        var edgePath = _registry.GetHostManifest(
+            BrowserKind.Edge,
+            HostName);
+        if (!File.Exists(manifestPath))
+        {
+            return Task.FromResult(new NativeMessagingRegistrationStatus(
+                false,
+                manifestPath,
+                "本机连接清单不存在。"));
+        }
+
+        if (!string.Equals(
+                chromePath,
+                manifestPath,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                edgePath,
+                manifestPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new NativeMessagingRegistrationStatus(
+                false,
+                manifestPath,
+                "浏览器连接注册不完整。"));
+        }
+
+        return Task.FromResult(new NativeMessagingRegistrationStatus(
+            true,
+            manifestPath,
+            null));
+    }
+
+    public Task<string> RepairAsync(
+        CancellationToken cancellationToken = default) =>
+        RegisterAsync(cancellationToken);
+
+    public Task UnregisterAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _registry.DeleteHostManifest(
+            BrowserKind.Chrome,
+            HostName);
+        _registry.DeleteHostManifest(
+            BrowserKind.Edge,
+            HostName);
+        var manifestPath = Path.Combine(
+            _manifestDirectory,
+            "native-host.json");
+        if (File.Exists(manifestPath))
+        {
+            File.Delete(manifestPath);
+        }
+
+        return Task.CompletedTask;
     }
 
     private sealed record NativeHostManifest(

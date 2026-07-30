@@ -5,10 +5,20 @@ using ScreenTranslator.Core.Browser;
 
 namespace ScreenTranslator.App.ViewModels;
 
+public enum BrowserSetupState
+{
+    Detecting,
+    NotDetected,
+    ExtensionNotConnected,
+    WaitingForConnection,
+    Connected,
+    BridgeError,
+}
+
 public sealed class BrowserIntegrationViewModel : ObservableObject
 {
-    private string _chromeStatus = "未连接";
-    private string _edgeStatus = "未连接";
+    private BrowserSetupState _chromeState = BrowserSetupState.Detecting;
+    private BrowserSetupState _edgeState = BrowserSetupState.Detecting;
     private string _detailText = "安装配套扩展后，普通网页中的原位译文可随滚动移动。";
     private bool _isEnabled = true;
 
@@ -20,19 +30,30 @@ public sealed class BrowserIntegrationViewModel : ObservableObject
             () => OpenBrowserExtensionsRequested?.Invoke(this, BrowserKind.Edge));
         OpenExtensionFolderCommand = new RelayCommand(
             () => OpenExtensionFolderRequested?.Invoke(this, EventArgs.Empty));
+        InstallChromeExtensionCommand = new RelayCommand(
+            () => InstallExtensionRequested?.Invoke(
+                this,
+                BrowserKind.Chrome));
+        InstallEdgeExtensionCommand = new RelayCommand(
+            () => InstallExtensionRequested?.Invoke(
+                this,
+                BrowserKind.Edge));
+        RepairBridgeCommand = new AsyncRelayCommand(
+            () => RepairBridgeRequested?.Invoke(
+                      this,
+                      EventArgs.Empty)
+                  ?? Task.CompletedTask);
     }
 
-    public string ChromeStatus
-    {
-        get => _chromeStatus;
-        private set => SetProperty(ref _chromeStatus, value);
-    }
+    public BrowserSetupState ChromeState =>
+        _chromeState;
 
-    public string EdgeStatus
-    {
-        get => _edgeStatus;
-        private set => SetProperty(ref _edgeStatus, value);
-    }
+    public BrowserSetupState EdgeState =>
+        _edgeState;
+
+    public string ChromeStatus => StateLabel(_chromeState);
+
+    public string EdgeStatus => StateLabel(_edgeState);
 
     public string DetailText
     {
@@ -54,7 +75,8 @@ public sealed class BrowserIntegrationViewModel : ObservableObject
 
     public bool IsBrowserFollowingAvailable =>
         IsEnabled &&
-        (ChromeStatus == "已连接" || EdgeStatus == "已连接");
+        (_chromeState == BrowserSetupState.Connected
+         || _edgeState == BrowserSetupState.Connected);
 
     public IRelayCommand OpenChromeExtensionsCommand { get; }
 
@@ -62,22 +84,111 @@ public sealed class BrowserIntegrationViewModel : ObservableObject
 
     public IRelayCommand OpenExtensionFolderCommand { get; }
 
+    public IRelayCommand InstallChromeExtensionCommand { get; }
+
+    public IRelayCommand InstallEdgeExtensionCommand { get; }
+
+    public IAsyncRelayCommand RepairBridgeCommand { get; }
+
     public event EventHandler<BrowserKind>? OpenBrowserExtensionsRequested;
 
     public event EventHandler? OpenExtensionFolderRequested;
 
+    public event EventHandler<BrowserKind>? InstallExtensionRequested;
+
+    public event Func<object?, EventArgs, Task>? RepairBridgeRequested;
+
+    public void UpdateDetected(BrowserKind browser, bool installed)
+    {
+        var current = GetState(browser);
+        SetState(
+            browser,
+            installed
+                ? current == BrowserSetupState.Connected
+                    ? current
+                    : BrowserSetupState.ExtensionNotConnected
+                : BrowserSetupState.NotDetected);
+    }
+
+    public void SetWaitingForConnection(BrowserKind browser) =>
+        SetState(browser, BrowserSetupState.WaitingForConnection);
+
+    public void SetBridgeError(string message)
+    {
+        if (_chromeState != BrowserSetupState.NotDetected)
+        {
+            SetState(BrowserKind.Chrome, BrowserSetupState.BridgeError);
+        }
+
+        if (_edgeState != BrowserSetupState.NotDetected)
+        {
+            SetState(BrowserKind.Edge, BrowserSetupState.BridgeError);
+        }
+
+        DetailText = message;
+    }
+
     public void UpdateConnection(BrowserKind browser, bool connected)
     {
-        var status = connected ? "已连接" : "未连接";
+        var current = GetState(browser);
+        if (current == BrowserSetupState.NotDetected && !connected)
+        {
+            return;
+        }
+
+        SetState(
+            browser,
+            connected
+                ? BrowserSetupState.Connected
+                : BrowserSetupState.ExtensionNotConnected);
+    }
+
+    private BrowserSetupState GetState(BrowserKind browser) =>
+        browser == BrowserKind.Chrome
+            ? _chromeState
+            : _edgeState;
+
+    private void SetState(
+        BrowserKind browser,
+        BrowserSetupState state)
+    {
         if (browser == BrowserKind.Chrome)
         {
-            ChromeStatus = status;
+            if (!SetProperty(
+                    ref _chromeState,
+                    state,
+                    nameof(ChromeState)))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(ChromeStatus));
         }
         else
         {
-            EdgeStatus = status;
+            if (!SetProperty(
+                    ref _edgeState,
+                    state,
+                    nameof(EdgeState)))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(EdgeStatus));
         }
 
         OnPropertyChanged(nameof(IsBrowserFollowingAvailable));
     }
+
+    private static string StateLabel(BrowserSetupState state) =>
+        state switch
+        {
+            BrowserSetupState.Detecting => "正在检测",
+            BrowserSetupState.NotDetected => "未安装",
+            BrowserSetupState.ExtensionNotConnected => "扩展未连接",
+            BrowserSetupState.WaitingForConnection => "等待连接",
+            BrowserSetupState.Connected => "已连接",
+            BrowserSetupState.BridgeError => "连接需修复",
+            _ => "未知状态",
+        };
 }

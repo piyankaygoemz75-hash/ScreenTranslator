@@ -169,14 +169,17 @@
                                Margin="0,0,0,14" />
 
                     <WrapPanel>
-                        <ui:Button Content="打开扩展文件夹"
+                        <ui:Button Content="安装到 Chrome"
+                                   Command="{Binding BrowserIntegration.InstallChromeExtensionCommand}"
+                                   Margin="0,0,10,8" />
+                        <ui:Button Content="安装到 Edge"
+                                   Command="{Binding BrowserIntegration.InstallEdgeExtensionCommand}"
+                                   Margin="0,0,10,8" />
+                        <ui:Button Content="修复连接"
+                                   Command="{Binding BrowserIntegration.RepairBridgeCommand}"
+                                   Margin="0,0,10,8" />
+                        <ui:Button Content="打开扩展目录"
                                    Command="{Binding BrowserIntegration.OpenExtensionFolderCommand}"
-                                   Margin="0,0,10,8" />
-                        <ui:Button Content="Chrome 扩展页"
-                                   Command="{Binding BrowserIntegration.OpenChromeExtensionsCommand}"
-                                   Margin="0,0,10,8" />
-                        <ui:Button Content="Edge 扩展页"
-                                   Command="{Binding BrowserIntegration.OpenEdgeExtensionsCommand}"
                                    Margin="0,0,0,8" />
                     </WrapPanel>
                 </StackPanel>
