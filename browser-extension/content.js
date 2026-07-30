@@ -146,6 +146,7 @@
         type: "scrollBatch",
         documentToken,
         devicePixelRatio: readDevicePixelRatio(),
+        viewportSize: readViewportSize(),
         scrolls
       });
     });

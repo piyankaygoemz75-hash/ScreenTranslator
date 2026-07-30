@@ -249,13 +249,11 @@ public sealed partial class ApplicationController
             .Where(reply => reply is not null)
             .Select(reply => reply!.Value)
             .Where(reply =>
-                reply.Reply.Found
+                reply.Reply.CanCreateHello
                 && reply.Reply.BrowserKind == expectedBrowser
-                && reply.Reply.FrameId == 0
-                && reply.Reply.BrowserWindowBounds is not null
                 && WindowBoundsMatch(
                     expectedWindow,
-                    reply.Reply.BrowserWindowBounds.Value))
+                    reply.Reply.BrowserWindowBounds!.Value))
             .OrderBy(reply => WindowMatchError(
                 expectedWindow,
                 reply.Reply.BrowserWindowBounds!.Value))
@@ -349,6 +347,18 @@ public sealed partial class ApplicationController
                         requestId,
                         out var completion))
                 {
+                    if (reply.Found && !reply.CanCreateHello)
+                    {
+                        BrowserFollowDiagnostics.Write(
+                            "active_tab_state_incomplete",
+                            ("browser", reply.Browser),
+                            ("browser_window_id", reply.BrowserWindowId),
+                            ("tab_id", reply.TabId),
+                            ("has_document_token",
+                                !string.IsNullOrWhiteSpace(reply.DocumentToken)),
+                            ("has_viewport", reply.ViewportSize is not null));
+                    }
+
                     if (reply.BrowserKind is { } browser)
                     {
                         _browserConnections[e.ConnectionId] = browser;
@@ -701,13 +711,24 @@ public sealed partial class ApplicationController
         public BrowserKind? BrowserKind =>
             ParseBrowserKind(Browser);
 
+        public bool CanCreateHello =>
+            Found
+            && BrowserKind is not null
+            && BrowserWindowBounds is not null
+            && FrameId == 0
+            && !string.IsNullOrWhiteSpace(DocumentToken)
+            && ViewportSize is
+            {
+                Width: > 0,
+                Height: > 0,
+            };
+
         public BrowserHello ToHello()
         {
-            if (!Found
+            if (!CanCreateHello
                 || BrowserKind is not { } browser
                 || BrowserWindowBounds is not { } bounds
-                || ViewportSize is not { } viewport
-                || string.IsNullOrWhiteSpace(DocumentToken))
+                || ViewportSize is not { } viewport)
             {
                 throw new BrowserProtocolException(
                     "浏览器活动标签页响应不完整。");
@@ -717,7 +738,7 @@ public sealed partial class ApplicationController
                 browser,
                 BrowserWindowId,
                 TabId,
-                DocumentToken,
+                DocumentToken!,
                 NavigationGeneration,
                 DevicePixelRatio,
                 viewport,

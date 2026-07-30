@@ -1,5 +1,7 @@
 "use strict";
 
+importScripts("document-state.js");
+
 const HOST_NAME = "com.screentranslator.browser_bridge";
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 5000;
@@ -208,7 +210,7 @@ async function forwardScrollBatch(message, sender) {
     frameId,
     message.documentToken,
     message.devicePixelRatio,
-    null);
+    normalizeSize(message.viewportSize));
 
   for (const scroll of message.scrolls) {
     if (
@@ -404,30 +406,30 @@ function normalizeSize(size) {
 async function ensureTopFrameState(tab) {
   const key = frameKey(tab.id, 0);
   const current = documentsByFrame.get(key);
-  if (current) {
-    return current;
-  }
+  return ScreenTranslatorDocumentState.recoverCompleteViewportState(
+    current,
+    async () => {
+      let response;
+      try {
+        response = await chrome.tabs.sendMessage(
+          tab.id,
+          { type: "queryDocumentState" },
+          { frameId: 0 });
+      } catch {
+        return null;
+      }
 
-  let response;
-  try {
-    response = await chrome.tabs.sendMessage(
-      tab.id,
-      { type: "queryDocumentState" },
-      { frameId: 0 });
-  } catch {
-    return null;
-  }
-
-  const viewportSize = normalizeSize(response?.viewportSize);
-  if (!validDocumentMessage(response) || !viewportSize) {
-    return null;
-  }
-  return rememberDocument(
-    tab.id,
-    0,
-    response.documentToken,
-    response.devicePixelRatio,
-    viewportSize);
+      const viewportSize = normalizeSize(response?.viewportSize);
+      if (!validDocumentMessage(response) || !viewportSize) {
+        return null;
+      }
+      return rememberDocument(
+        tab.id,
+        0,
+        response.documentToken,
+        response.devicePixelRatio,
+        viewportSize);
+    });
 }
 
 async function announceFocusedDocument() {
