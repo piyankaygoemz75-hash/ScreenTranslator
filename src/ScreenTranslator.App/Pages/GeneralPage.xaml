@@ -37,14 +37,25 @@
                                    Style="{StaticResource SettingDescriptionStyle}"
                                    Margin="0,6,24,0" />
                     </StackPanel>
-                    <ui:Button Grid.Column="1"
-                               Content="开始框选"
-                               Appearance="Primary"
-                               Padding="20,8"
-                               VerticalAlignment="Center"
-                               Command="{Binding StartCaptureCommand}" />
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+                        <ui:Button Content="开始框选"
+                                   Appearance="Primary"
+                                   Padding="20,8"
+                                   HorizontalAlignment="Stretch"
+                                   Command="{Binding StartCaptureCommand}" />
+                        <ui:Button Content="连续框选"
+                                   Padding="20,8"
+                                   Margin="0,8,0,0"
+                                   HorizontalAlignment="Stretch"
+                                   Command="{Binding StartContinuousCaptureCommand}" />
+                    </StackPanel>
                 </Grid>
             </Border>
+
+            <TextBlock Text="{Binding ContinuousCaptureStatusText}"
+                       Style="{StaticResource SettingDescriptionStyle}"
+                       Margin="4,-10,0,18" />
 
             <TextBlock Text="启动与语言" Style="{StaticResource SectionTitleStyle}" />
 

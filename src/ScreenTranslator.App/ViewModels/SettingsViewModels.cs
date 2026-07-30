@@ -14,13 +14,19 @@ public sealed class GeneralSettingsViewModel : ObservableObject
     private bool _minimizeToTray = true;
     private string _targetLanguage = "简体中文";
     private string _captureHotkeyText = HotkeyGesture.Default.ToDisplayString();
+    private bool _isContinuousCaptureActive;
+    private int _continuousPendingCount;
 
     public GeneralSettingsViewModel(
         BrowserIntegrationViewModel? browserIntegration = null)
     {
         BrowserIntegration = browserIntegration ?? new BrowserIntegrationViewModel();
         StartCaptureCommand = new RelayCommand(
-            () => StartCaptureRequested?.Invoke(this, EventArgs.Empty));
+            () => StartCaptureRequested?.Invoke(this, EventArgs.Empty),
+            () => !IsContinuousCaptureActive);
+        StartContinuousCaptureCommand = new RelayCommand(
+            () => StartContinuousCaptureRequested?.Invoke(this, EventArgs.Empty),
+            () => !IsContinuousCaptureActive);
     }
 
     public BrowserIntegrationViewModel BrowserIntegration { get; }
@@ -52,9 +58,45 @@ public sealed class GeneralSettingsViewModel : ObservableObject
         set => SetProperty(ref _captureHotkeyText, value);
     }
 
+    public bool IsContinuousCaptureActive
+    {
+        get => _isContinuousCaptureActive;
+        set
+        {
+            if (!SetProperty(ref _isContinuousCaptureActive, value))
+            {
+                return;
+            }
+
+            StartCaptureCommand.NotifyCanExecuteChanged();
+            StartContinuousCaptureCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(ContinuousCaptureStatusText));
+        }
+    }
+
+    public int ContinuousPendingCount
+    {
+        get => _continuousPendingCount;
+        set
+        {
+            if (SetProperty(ref _continuousPendingCount, Math.Max(0, value)))
+            {
+                OnPropertyChanged(nameof(ContinuousCaptureStatusText));
+            }
+        }
+    }
+
+    public string ContinuousCaptureStatusText => IsContinuousCaptureActive
+        ? $"连续框选中 · 待处理 {ContinuousPendingCount}"
+        : "连续选择多个区域，Esc 或右键结束，译文会依次显示。";
+
     public IRelayCommand StartCaptureCommand { get; }
 
+    public IRelayCommand StartContinuousCaptureCommand { get; }
+
     public event EventHandler? StartCaptureRequested;
+
+    public event EventHandler? StartContinuousCaptureRequested;
 }
 
 public sealed class AppearanceSettingsViewModel : ObservableObject

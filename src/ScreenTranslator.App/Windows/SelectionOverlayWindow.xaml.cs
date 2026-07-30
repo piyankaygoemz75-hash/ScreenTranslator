@@ -40,9 +40,11 @@ public partial class SelectionOverlayWindow : Window
         Rect monitorBoundsDips,
         Point monitorOriginPhysical,
         double dpiScaleX,
-        double dpiScaleY)
+        double dpiScaleY,
+        bool continuous = false)
     {
         _viewModel.Screenshot = screenshot;
+        _viewModel.IsContinuous = continuous;
         _monitorOriginPhysical = monitorOriginPhysical;
         _dpiScaleX = Math.Max(dpiScaleX, 0.01);
         _dpiScaleY = Math.Max(dpiScaleY, 0.01);

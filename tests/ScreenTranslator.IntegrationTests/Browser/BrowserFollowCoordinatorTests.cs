@@ -89,6 +89,25 @@ public sealed class BrowserFollowCoordinatorTests
         Assert.Equal(1, coordinator.OverlayCount);
     }
 
+    [Fact]
+    public void Multiple_Groups_Keep_Independent_Selection_Bounds()
+    {
+        var first = new FakeOverlay(new DipRect(100, 200, 220, 40));
+        var second = new FakeOverlay(new DipRect(500, 500, 180, 36));
+        var coordinator = CreateCoordinator(first);
+        coordinator.AddGroup(
+            [second],
+            new DipRect(480, 460, 260, 180));
+
+        coordinator.Handle(CreateScroll(deltaYCss: 50));
+
+        Assert.Equal(150, first.TrackingBounds.Y);
+        Assert.Equal(450, second.TrackingBounds.Y);
+        Assert.True(first.IsTrackingVisible);
+        Assert.True(second.IsTrackingVisible);
+        Assert.Equal(2, coordinator.OverlayCount);
+    }
+
     private static BrowserFollowCoordinator CreateCoordinator(
         params ITrackedOverlay[] overlays)
     {

@@ -56,11 +56,11 @@
                 CornerRadius="8"
                 Background="#D91F1F1F">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="拖动框选要翻译的内容"
+                <TextBlock Text="{Binding InstructionText}"
                            Foreground="White"
                            FontFamily="Segoe UI Variable, Microsoft YaHei UI"
                            FontWeight="SemiBold" />
-                <TextBlock Text="  ·  Esc 取消"
+                <TextBlock Text="{Binding CancelText}"
                            Foreground="#BFFFFFFF"
                            FontFamily="Segoe UI Variable, Microsoft YaHei UI"
                            Margin="6,0,0,0" />

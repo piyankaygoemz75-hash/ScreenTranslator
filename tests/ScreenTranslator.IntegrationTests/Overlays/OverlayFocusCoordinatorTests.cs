@@ -31,6 +31,24 @@ public sealed class OverlayFocusCoordinatorTests
         Assert.Equal("sourceWindow", exception.ParamName);
     }
 
+    [Fact]
+    public void Multiple_Source_Groups_Hide_And_Restore_Independently()
+    {
+        var browser = new FakeTarget();
+        var chat = new FakeTarget();
+        var coordinator = new OverlayFocusCoordinator(
+            new IntPtr(100),
+            [browser]);
+        coordinator.AddGroup(new IntPtr(200), [chat]);
+
+        coordinator.HandleForegroundChanged(new IntPtr(100));
+        coordinator.HandleForegroundChanged(new IntPtr(200));
+
+        Assert.Equal([true, false], browser.States);
+        Assert.Equal([false, true], chat.States);
+        Assert.Equal(2, coordinator.Count);
+    }
+
     private sealed class FakeTarget : IOverlayFocusTarget
     {
         public List<bool> States { get; } = [];

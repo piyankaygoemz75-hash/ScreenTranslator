@@ -38,6 +38,11 @@ public sealed class TrayIconService : IDisposable
             (_, _) => PostToApplication(
                 () => CaptureRequested?.Invoke(this, EventArgs.Empty)));
         _menu.Items.Add(
+            "连续框选翻译",
+            image: null,
+            (_, _) => PostToApplication(
+                () => ContinuousCaptureRequested?.Invoke(this, EventArgs.Empty)));
+        _menu.Items.Add(
             "显示或隐藏全部译文",
             image: null,
             (_, _) => PostToApplication(
@@ -71,6 +76,7 @@ public sealed class TrayIconService : IDisposable
     }
 
     public event EventHandler? CaptureRequested;
+    public event EventHandler? ContinuousCaptureRequested;
     public event EventHandler? ToggleOverlaysRequested;
     public event EventHandler? ShowSettingsRequested;
     public event EventHandler<bool>? HotkeyPauseChanged;

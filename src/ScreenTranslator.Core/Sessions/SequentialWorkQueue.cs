@@ -18,6 +18,8 @@ public sealed class SequentialWorkQueue<T> : IAsyncDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly SemaphoreSlim _slots;
     private readonly Task _consumer;
+    private readonly object _disposeLock = new();
+    private Task? _disposeTask;
     private int _pendingCount;
     private int _completed;
 
@@ -95,7 +97,16 @@ public sealed class SequentialWorkQueue<T> : IAsyncDisposable
         await _consumer;
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeLock)
+        {
+            _disposeTask ??= DisposeCoreAsync();
+            return new ValueTask(_disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
     {
         if (Interlocked.Exchange(ref _completed, 1) == 0)
         {

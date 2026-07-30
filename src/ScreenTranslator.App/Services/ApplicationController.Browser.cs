@@ -178,17 +178,41 @@ public sealed partial class ApplicationController
                 hello,
                 monitorScale,
                 viewportBounds);
+            var existingCoordinator = _browserFollowCoordinator;
+            if (existingCoordinator is not null)
+            {
+                if (existingCoordinator.Browser == hello.Browser
+                    && existingCoordinator.BrowserWindowId
+                    == hello.BrowserWindowId
+                    && existingCoordinator.TabId == hello.TabId
+                    && string.Equals(
+                        existingCoordinator.DocumentToken,
+                        hello.DocumentToken,
+                        StringComparison.Ordinal))
+                {
+                    existingCoordinator.AddGroup(
+                        activeOverlays.Cast<ITrackedOverlay>().ToArray(),
+                        ToCoreDipRect(
+                            work.AbsoluteSelection,
+                            work.Monitor));
+                    BrowserFollowDiagnostics.Write(
+                        "follow_group_attached",
+                        ("browser", hello.Browser),
+                        ("tab_id", hello.TabId),
+                        ("overlays", activeOverlays.Length));
+                    BrowserIntegration.DetailText =
+                        $"{BrowserLabel(hello.Browser)} 网页跟随已扩展到新的连续译文。";
+                }
+
+                monitor.Dispose();
+                return;
+            }
+
             var coordinator = new BrowserFollowCoordinator(
                 session,
                 activeOverlays.Cast<ITrackedOverlay>().ToArray(),
                 ToCoreDipRect(work.AbsoluteSelection, work.Monitor));
             coordinator.Invalidated += OnBrowserFollowInvalidated;
-
-            if (_browserFollowCoordinator is not null)
-            {
-                monitor.Dispose();
-                return;
-            }
 
             _browserFollowCoordinator = coordinator;
             _browserWindowMonitor = monitor;

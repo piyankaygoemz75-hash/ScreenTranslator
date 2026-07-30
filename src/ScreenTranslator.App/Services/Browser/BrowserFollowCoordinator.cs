@@ -20,8 +20,7 @@ public sealed class BrowserFollowInvalidatedEventArgs(string reason) : EventArgs
 public sealed class BrowserFollowCoordinator
 {
     private readonly BrowserTrackingSession _session;
-    private readonly List<ITrackedOverlay> _overlays;
-    private DipRect _selectionBounds;
+    private readonly Dictionary<Guid, OverlayGroup> _groups = [];
     private bool _invalidated;
 
     public BrowserFollowCoordinator(
@@ -30,8 +29,7 @@ public sealed class BrowserFollowCoordinator
         DipRect selectionBounds)
     {
         _session = session;
-        _overlays = overlays.ToList();
-        _selectionBounds = selectionBounds;
+        AddGroup(overlays, selectionBounds);
     }
 
     public event EventHandler<BrowserFollowInvalidatedEventArgs>? Invalidated;
@@ -44,12 +42,42 @@ public sealed class BrowserFollowCoordinator
 
     public int TabId => _session.TabId;
 
-    public int OverlayCount => _overlays.Count;
+    public string DocumentToken => _session.DocumentToken;
+
+    public int OverlayCount =>
+        _groups.Values.Sum(group => group.Overlays.Count);
+
+    public Guid AddGroup(
+        IReadOnlyList<ITrackedOverlay> overlays,
+        DipRect selectionBounds)
+    {
+        ArgumentNullException.ThrowIfNull(overlays);
+        var id = Guid.NewGuid();
+        _groups.Add(
+            id,
+            new OverlayGroup(selectionBounds, overlays.ToList()));
+        return id;
+    }
 
     public bool RemoveOverlay(ITrackedOverlay overlay)
     {
         ArgumentNullException.ThrowIfNull(overlay);
-        return _overlays.Remove(overlay);
+        foreach (var entry in _groups.ToArray())
+        {
+            if (!entry.Value.Overlays.Remove(overlay))
+            {
+                continue;
+            }
+
+            if (entry.Value.Overlays.Count == 0)
+            {
+                _groups.Remove(entry.Key);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     public void Handle(BrowserMessage message)
@@ -85,16 +113,19 @@ public sealed class BrowserFollowCoordinator
             return;
         }
 
-        _selectionBounds = Translate(
-            _selectionBounds,
-            deltaXDip,
-            deltaYDip);
-        foreach (var overlay in _overlays.ToArray())
+        foreach (var group in _groups.Values)
         {
-            overlay.MoveTo(Translate(
-                overlay.TrackingBounds,
+            group.SelectionBounds = Translate(
+                group.SelectionBounds,
                 deltaXDip,
-                deltaYDip));
+                deltaYDip);
+            foreach (var overlay in group.Overlays.ToArray())
+            {
+                overlay.MoveTo(Translate(
+                    overlay.TrackingBounds,
+                    deltaXDip,
+                    deltaYDip));
+            }
         }
     }
 
@@ -106,7 +137,9 @@ public sealed class BrowserFollowCoordinator
         }
 
         _invalidated = true;
-        foreach (var overlay in _overlays.ToArray())
+        foreach (var overlay in _groups.Values
+                     .SelectMany(group => group.Overlays)
+                     .ToArray())
         {
             overlay.SetTrackingVisibility(false);
         }
@@ -118,27 +151,30 @@ public sealed class BrowserFollowCoordinator
 
     private void ApplyMove(BrowserSessionUpdate update)
     {
-        foreach (var overlay in _overlays.ToArray())
+        foreach (var group in _groups.Values)
         {
-            var result = update.ScrollContainerDip is { } container
-                ? OverlayFollowCalculator.ApplyNestedScroll(
-                    overlay.TrackingBounds,
-                    _selectionBounds,
-                    container,
-                    update.DeltaXDip,
-                    update.DeltaYDip)
-                : OverlayFollowCalculator.ApplyRootScroll(
-                    overlay.TrackingBounds,
-                    _selectionBounds,
-                    update.DeltaXDip,
-                    update.DeltaYDip);
-
-            if (result.WasMoved)
+            foreach (var overlay in group.Overlays.ToArray())
             {
-                overlay.MoveTo(result.Bounds);
-            }
+                var result = update.ScrollContainerDip is { } container
+                    ? OverlayFollowCalculator.ApplyNestedScroll(
+                        overlay.TrackingBounds,
+                        group.SelectionBounds,
+                        container,
+                        update.DeltaXDip,
+                        update.DeltaYDip)
+                    : OverlayFollowCalculator.ApplyRootScroll(
+                        overlay.TrackingBounds,
+                        group.SelectionBounds,
+                        update.DeltaXDip,
+                        update.DeltaYDip);
 
-            overlay.SetTrackingVisibility(result.IsVisible);
+                if (result.WasMoved)
+                {
+                    overlay.MoveTo(result.Bounds);
+                }
+
+                overlay.SetTrackingVisibility(result.IsVisible);
+            }
         }
     }
 
@@ -151,4 +187,13 @@ public sealed class BrowserFollowCoordinator
             bounds.Y + deltaY,
             bounds.Width,
             bounds.Height);
+
+    private sealed class OverlayGroup(
+        DipRect selectionBounds,
+        List<ITrackedOverlay> overlays)
+    {
+        public DipRect SelectionBounds { get; set; } = selectionBounds;
+
+        public List<ITrackedOverlay> Overlays { get; } = overlays;
+    }
 }

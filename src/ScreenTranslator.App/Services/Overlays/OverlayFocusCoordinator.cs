@@ -7,8 +7,7 @@ public interface IOverlayFocusTarget
 
 public sealed class OverlayFocusCoordinator
 {
-    private readonly IntPtr _sourceWindow;
-    private readonly List<IOverlayFocusTarget> _targets;
+    private readonly Dictionary<IntPtr, List<IOverlayFocusTarget>> _groups = [];
 
     public OverlayFocusCoordinator(
         IntPtr sourceWindow,
@@ -23,24 +22,68 @@ public sealed class OverlayFocusCoordinator
 
         ArgumentNullException.ThrowIfNull(targets);
 
-        _sourceWindow = sourceWindow;
-        _targets = targets.ToList();
+        AddGroup(sourceWindow, targets);
     }
 
-    public int Count => _targets.Count;
+    public int Count => _groups.Values.Sum(targets => targets.Count);
+
+    public void AddGroup(
+        IntPtr sourceWindow,
+        IEnumerable<IOverlayFocusTarget> targets)
+    {
+        if (sourceWindow == IntPtr.Zero)
+        {
+            throw new ArgumentException(
+                "Source window is required.",
+                nameof(sourceWindow));
+        }
+
+        ArgumentNullException.ThrowIfNull(targets);
+        if (!_groups.TryGetValue(sourceWindow, out var group))
+        {
+            group = [];
+            _groups.Add(sourceWindow, group);
+        }
+
+        foreach (var target in targets)
+        {
+            if (!group.Contains(target))
+            {
+                group.Add(target);
+            }
+        }
+    }
 
     public bool Remove(IOverlayFocusTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
-        return _targets.Remove(target);
+        foreach (var entry in _groups.ToArray())
+        {
+            if (!entry.Value.Remove(target))
+            {
+                continue;
+            }
+
+            if (entry.Value.Count == 0)
+            {
+                _groups.Remove(entry.Key);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     public void HandleForegroundChanged(IntPtr foregroundWindow)
     {
-        var active = foregroundWindow == _sourceWindow;
-        foreach (var target in _targets.ToArray())
+        foreach (var entry in _groups)
         {
-            target.SetSourceWindowActive(active);
+            var active = foregroundWindow == entry.Key;
+            foreach (var target in entry.Value.ToArray())
+            {
+                target.SetSourceWindowActive(active);
+            }
         }
     }
 }

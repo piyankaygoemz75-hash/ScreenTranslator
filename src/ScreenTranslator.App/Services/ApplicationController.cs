@@ -55,6 +55,10 @@ public sealed partial class ApplicationController : IDisposable
     private bool _applyingSettings;
     private bool _exitRequested;
     private bool _disposed;
+    private CancellationTokenSource? _continuousCaptureCancellation;
+    private SequentialWorkQueue<TranslationCaptureWorkItem>? _continuousCaptureQueue;
+    private ContinuousSidePanelWindow? _continuousSidePanel;
+    private ContinuousResultsViewModel? _continuousResults;
 
     public ApplicationController(Application application)
     {
@@ -104,6 +108,8 @@ public sealed partial class ApplicationController : IDisposable
 
         MainWindow.StartCaptureRequested += OnCaptureRequested;
         GeneralSettings.StartCaptureRequested += OnCaptureRequested;
+        GeneralSettings.StartContinuousCaptureRequested +=
+            OnContinuousCaptureRequested;
         GeneralSettings.PropertyChanged += OnSettingsPropertyChanged;
         TranslationSettings.PropertyChanged += OnSettingsPropertyChanged;
         AppearanceSettings.PropertyChanged += OnSettingsPropertyChanged;
@@ -119,6 +125,7 @@ public sealed partial class ApplicationController : IDisposable
 
         _hotkey.CaptureRequested += OnCaptureRequested;
         _tray.CaptureRequested += OnCaptureRequested;
+        _tray.ContinuousCaptureRequested += OnContinuousCaptureRequested;
         _tray.ToggleOverlaysRequested += (_, _) => ToggleOverlays();
         _tray.ShowSettingsRequested += (_, _) => ShowSettings();
         _tray.HotkeyPauseChanged += OnHotkeyPauseChanged;
@@ -175,6 +182,9 @@ public sealed partial class ApplicationController : IDisposable
 
     private void OnCaptureRequested(object? sender, EventArgs e) =>
         _ = CaptureAndTranslateAsync();
+
+    private void OnContinuousCaptureRequested(object? sender, EventArgs e) =>
+        _ = RunContinuousCaptureAsync();
 
     private async Task CaptureAndTranslateAsync()
     {
@@ -280,10 +290,259 @@ public sealed partial class ApplicationController : IDisposable
         }
     }
 
+    private async Task RunContinuousCaptureAsync()
+    {
+        if (_continuousCaptureCancellation is not null)
+        {
+            MainWindow.StatusText = "连续框选已经在运行";
+            return;
+        }
+
+        var apiKey = await _secretStore.GetAsync(
+            DeepSeekTranslationProvider.ApiKeyName);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            MainWindow.StatusText = "请先在“翻译”中配置 DeepSeek API Key";
+            ShowSettings();
+            return;
+        }
+
+        if (!await _captureGate.WaitAsync(0))
+        {
+            MainWindow.StatusText = "正在处理上一项翻译";
+            return;
+        }
+
+        var acquisitionCancellation = new CancellationTokenSource();
+        var queue = new SequentialWorkQueue<TranslationCaptureWorkItem>(
+            capacity: 5,
+            ProcessContinuousWorkItemAsync);
+        _continuousCaptureCancellation = acquisitionCancellation;
+        _continuousCaptureQueue = queue;
+        GeneralSettings.IsContinuousCaptureActive = true;
+        MainWindow.IsCaptureAvailable = false;
+
+        queue.PendingCountChanged += OnContinuousPendingCountChanged;
+        queue.ItemFailed += OnContinuousItemFailed;
+
+        try
+        {
+            MainWindow.StatusText = "连续框选已开始 · Esc 或右键结束";
+            while (!acquisitionCancellation.IsCancellationRequested)
+            {
+                var item = await AcquireContinuousWorkItemAsync(
+                    acquisitionCancellation.Token);
+                if (item is null)
+                {
+                    break;
+                }
+
+                MainWindow.StatusText = queue.PendingCount >= queue.Capacity
+                    ? "队列已满，正在等待处理…"
+                    : "已加入队列，继续框选";
+                await queue.EnqueueAsync(
+                    item,
+                    acquisitionCancellation.Token);
+            }
+        }
+        catch (OperationCanceledException)
+            when (acquisitionCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            MainWindow.StatusText = $"连续框选已停止：{exception.Message}";
+        }
+        finally
+        {
+            acquisitionCancellation.Cancel();
+
+            try
+            {
+                await queue.CompleteAsync();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            queue.PendingCountChanged -= OnContinuousPendingCountChanged;
+            queue.ItemFailed -= OnContinuousItemFailed;
+            await queue.DisposeAsync();
+            acquisitionCancellation.Dispose();
+            _continuousCaptureCancellation = null;
+            _continuousCaptureQueue = null;
+            GeneralSettings.IsContinuousCaptureActive = false;
+            GeneralSettings.ContinuousPendingCount = 0;
+            MainWindow.IsCaptureAvailable = true;
+            MainWindow.StatusText = "连续框选已结束 · 队列处理完成";
+            _captureGate.Release();
+        }
+    }
+
+    private async Task<TranslationCaptureWorkItem?>
+        AcquireContinuousWorkItemAsync(CancellationToken cancellationToken)
+    {
+        MainWindow.StatusText =
+            $"连续框选 · Esc 或右键结束 · 待处理 {GeneralSettings.ContinuousPendingCount}";
+        var sourceWindowHandle =
+            ForegroundWindowMonitor.CaptureForegroundRootWindow();
+        var capturedBrowser =
+            BrowserWindowEventMonitor.CaptureForegroundBrowser();
+        _mainWindow?.Hide();
+        SetResultWindowsCaptureVisibility(visible: false);
+        await _application.Dispatcher.InvokeAsync(
+            () => { },
+            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+        try
+        {
+            var captures = await _screenCapture.CaptureAllAsync(
+                cancellationToken);
+            if (captures.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "没有检测到可用的显示器。");
+            }
+
+            var selection = await SelectRegionAsync(
+                captures,
+                cancellationToken,
+                continuous: true);
+            if (selection is null)
+            {
+                return null;
+            }
+
+            var relativeBounds = new PixelRect(
+                selection.Bounds.X - selection.Capture.Monitor.Bounds.X,
+                selection.Bounds.Y - selection.Capture.Monitor.Bounds.Y,
+                selection.Bounds.Width,
+                selection.Bounds.Height);
+            relativeBounds = relativeBounds.Intersect(
+                new PixelRect(
+                    0,
+                    0,
+                    selection.Capture.Bitmap.Width,
+                    selection.Capture.Bitmap.Height));
+            if (!relativeBounds.IsUsable)
+            {
+                MainWindow.StatusText = "框选区域太小，继续选择";
+                return null;
+            }
+
+            return new TranslationCaptureWorkItem(
+                selection.Capture.Monitor,
+                selection.Bounds,
+                CapturedBitmapCropper.Crop(
+                    selection.Capture.Bitmap,
+                    relativeBounds),
+                capturedBrowser,
+                sourceWindowHandle,
+                CollectSettings());
+        }
+        finally
+        {
+            SetResultWindowsCaptureVisibility(_overlaysVisible);
+        }
+    }
+
+    private async Task ProcessContinuousWorkItemAsync(
+        TranslationCaptureWorkItem item,
+        CancellationToken cancellationToken)
+    {
+        await _application.Dispatcher.InvokeAsync(async () =>
+        {
+            var session = _sessions.Start();
+            try
+            {
+                _sessions.TryTransition(
+                    session.Id,
+                    TranslationSessionState.Ocr);
+                MainWindow.StatusText = "正在处理连续框选队列 · 本地 OCR";
+                var blocks = await _ocrEngine.RecognizeAsync(
+                    item.Bitmap,
+                    item.Settings.SourceLanguage,
+                    cancellationToken);
+                if (blocks.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "框选区域内没有识别到文字。");
+                }
+
+                var work = new LastTranslationWork(
+                    item.Monitor,
+                    item.AbsoluteSelection,
+                    blocks,
+                    item.CapturedBrowser,
+                    item.SourceWindowHandle);
+                _lastWork = work;
+                _sessions.TryTransition(
+                    session.Id,
+                    TranslationSessionState.Translating);
+                await TranslateAndShowAsync(
+                    work,
+                    item.Settings,
+                    session,
+                    preserveExistingResults: true);
+            }
+            catch
+            {
+                _sessions.TryTransition(
+                    session.Id,
+                    TranslationSessionState.Failed);
+                throw;
+            }
+        }).Task.Unwrap();
+    }
+
+    private void OnContinuousPendingCountChanged(
+        object? sender,
+        int pendingCount)
+    {
+        _application.Dispatcher.BeginInvoke(() =>
+        {
+            GeneralSettings.ContinuousPendingCount = pendingCount;
+            if (GeneralSettings.IsContinuousCaptureActive)
+            {
+                MainWindow.StatusText =
+                    $"连续框选中 · 待处理 {pendingCount}";
+            }
+        });
+    }
+
+    private void OnContinuousItemFailed(
+        object? sender,
+        WorkItemFailedEventArgs<TranslationCaptureWorkItem> e)
+    {
+        _application.Dispatcher.BeginInvoke(() =>
+            MainWindow.StatusText =
+                $"一项翻译失败，连续模式继续：{e.Exception.Message}");
+    }
+
+    private void SetResultWindowsCaptureVisibility(bool visible)
+    {
+        foreach (var window in _resultWindows.ToArray())
+        {
+            if (window is TextOverlayWindow overlay)
+            {
+                overlay.SetUserVisibility(visible);
+            }
+            else if (visible)
+            {
+                window.Show();
+            }
+            else
+            {
+                window.Hide();
+            }
+        }
+    }
+
     private async Task TranslateAndShowAsync(
         LastTranslationWork work,
         AppSettings settings,
-        TranslationSession session)
+        TranslationSession session,
+        bool preserveExistingResults = false)
     {
         MainWindow.StatusText = "正在调用 DeepSeek 翻译…";
         using var httpClient = new HttpClient();
@@ -307,7 +566,7 @@ public sealed partial class ApplicationController : IDisposable
             return;
         }
 
-        ShowTranslation(work, result, settings);
+        ShowTranslation(work, result, settings, preserveExistingResults);
         _sessions.TryTransition(session.Id, TranslationSessionState.Displayed);
         MainWindow.StatusText = $"翻译完成 · {result.Blocks.Count} 个文本块";
     }
@@ -339,7 +598,8 @@ public sealed partial class ApplicationController : IDisposable
 
     private async Task<SelectedRegion?> SelectRegionAsync(
         IReadOnlyList<MonitorCapture> captures,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool continuous = false)
     {
         var completion = new TaskCompletionSource<SelectedRegion?>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -358,7 +618,8 @@ public sealed partial class ApplicationController : IDisposable
                     monitor.Bounds.Height / monitor.ScaleY),
                 new Point(monitor.Bounds.X, monitor.Bounds.Y),
                 monitor.ScaleX,
-                monitor.ScaleY);
+                monitor.ScaleY,
+                continuous);
             window.SelectionCompleted += (_, args) =>
             {
                 completion.TrySetResult(
@@ -408,9 +669,14 @@ public sealed partial class ApplicationController : IDisposable
     private void ShowTranslation(
         LastTranslationWork work,
         TranslationResult result,
-        AppSettings settings)
+        AppSettings settings,
+        bool preserveExistingResults = false)
     {
-        CloseResultWindows();
+        if (!preserveExistingResults)
+        {
+            CloseResultWindows();
+        }
+
         _overlaysVisible = true;
 
         if (settings.DisplayMode == DisplayMode.Overlay)
@@ -420,8 +686,116 @@ public sealed partial class ApplicationController : IDisposable
         }
         else
         {
-            ShowSidePanel(work, result, settings);
+            if (preserveExistingResults)
+            {
+                ShowContinuousSidePanel(work, result, settings);
+            }
+            else
+            {
+                ShowSidePanel(work, result, settings);
+            }
         }
+    }
+
+    private void ShowContinuousSidePanel(
+        LastTranslationWork work,
+        TranslationResult result,
+        AppSettings settings)
+    {
+        if (_continuousSidePanel is null
+            || !_continuousSidePanel.IsLoaded
+            || _continuousResults is null)
+        {
+            _continuousResults = new ContinuousResultsViewModel();
+            _continuousResults.ClearAllRequested +=
+                OnContinuousResultsClearAllRequested;
+            _continuousSidePanel = new ContinuousSidePanelWindow(
+                _continuousResults)
+            {
+                Opacity = Math.Clamp(settings.OverlayOpacity, 0.72, 1),
+            };
+            var monitor = work.Monitor;
+            var sourceBounds = ToCoreDipRect(
+                work.AbsoluteSelection,
+                monitor);
+            var workArea = ToCoreDipRect(monitor.WorkArea, monitor);
+            var panelBounds = SidePanelBoundsService.Place(
+                sourceBounds,
+                workArea,
+                new DipSize(
+                    _continuousSidePanel.Width,
+                    _continuousSidePanel.Height),
+                settings.SidePanelPlacement);
+            _continuousSidePanel.Left = panelBounds.X;
+            _continuousSidePanel.Top = panelBounds.Y;
+            _continuousSidePanel.Width = panelBounds.Width;
+            _continuousSidePanel.Height = panelBounds.Height;
+            _continuousSidePanel.Closed +=
+                OnContinuousSidePanelClosed;
+            TrackAndShow(_continuousSidePanel);
+        }
+
+        var item = CreateResultViewModel(result, settings);
+        item.CopyRequested += OnContinuousResultCopyRequested;
+        item.CloseRequested += OnContinuousResultCloseRequested;
+        _continuousResults.Results.Add(item);
+    }
+
+    private static void OnContinuousResultCopyRequested(
+        object? sender,
+        string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+    }
+
+    private void OnContinuousResultCloseRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (sender is not TranslationResultViewModel item
+            || _continuousResults is null)
+        {
+            return;
+        }
+
+        item.CopyRequested -= OnContinuousResultCopyRequested;
+        item.CloseRequested -= OnContinuousResultCloseRequested;
+        _continuousResults.Results.Remove(item);
+    }
+
+    private void OnContinuousResultsClearAllRequested(
+        object? sender,
+        EventArgs e) =>
+        CloseResultWindows();
+
+    private void OnContinuousSidePanelClosed(
+        object? sender,
+        EventArgs e)
+    {
+        if (_continuousResults is not null)
+        {
+            _continuousResults.ClearAllRequested -=
+                OnContinuousResultsClearAllRequested;
+            foreach (var item in _continuousResults.Results)
+            {
+                item.CopyRequested -=
+                    OnContinuousResultCopyRequested;
+                item.CloseRequested -=
+                    OnContinuousResultCloseRequested;
+            }
+        }
+
+        if (_continuousSidePanel is not null)
+        {
+            _continuousSidePanel.Closed -=
+                OnContinuousSidePanelClosed;
+        }
+
+        _continuousSidePanel = null;
+        _continuousResults = null;
     }
 
     private void ShowSidePanel(
@@ -564,7 +938,6 @@ public sealed partial class ApplicationController : IDisposable
         IntPtr sourceWindowHandle,
         IReadOnlyList<TextOverlayWindow> overlays)
     {
-        StopOverlayFocusTracking();
         if (sourceWindowHandle == IntPtr.Zero || overlays.Count == 0)
         {
             return;
@@ -572,11 +945,26 @@ public sealed partial class ApplicationController : IDisposable
 
         try
         {
-            _overlayFocusCoordinator = new OverlayFocusCoordinator(
-                sourceWindowHandle,
-                overlays);
-            _foregroundWindowMonitor = new ForegroundWindowMonitor();
-            _foregroundWindowMonitor.Changed += OnForegroundWindowChanged;
+            if (_overlayFocusCoordinator is null)
+            {
+                _overlayFocusCoordinator = new OverlayFocusCoordinator(
+                    sourceWindowHandle,
+                    overlays);
+            }
+            else
+            {
+                _overlayFocusCoordinator.AddGroup(
+                    sourceWindowHandle,
+                    overlays);
+            }
+
+            if (_foregroundWindowMonitor is null)
+            {
+                _foregroundWindowMonitor = new ForegroundWindowMonitor();
+                _foregroundWindowMonitor.Changed +=
+                    OnForegroundWindowChanged;
+            }
+
             _overlayFocusCoordinator.HandleForegroundChanged(
                 ForegroundWindowMonitor.CaptureForegroundRootWindow());
         }
@@ -1108,6 +1496,12 @@ public sealed partial class ApplicationController : IDisposable
         if (!_disposed && !_exitRequested)
         {
             _exitRequested = true;
+            _continuousCaptureCancellation?.Cancel();
+            if (_continuousCaptureQueue is not null)
+            {
+                _ = _continuousCaptureQueue.DisposeAsync();
+            }
+
             if (_mainWindow is not null)
             {
                 _mainWindow.IsApplicationShuttingDown = true;
@@ -1126,6 +1520,22 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         _disposed = true;
+        _continuousCaptureCancellation?.Cancel();
+        if (_continuousCaptureQueue is not null)
+        {
+            try
+            {
+                var disposeQueue = _continuousCaptureQueue
+                    .DisposeAsync()
+                    .AsTask();
+                _ = disposeQueue.Wait(TimeSpan.FromSeconds(1));
+            }
+            catch
+            {
+                // Shutdown must continue while queued translations are cancelled.
+            }
+        }
+
         _tray.Dispose();
         try
         {
