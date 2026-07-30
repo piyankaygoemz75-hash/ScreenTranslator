@@ -2,6 +2,8 @@
 
 一款面向 Windows 10/11 的原生桌面翻译工具。按下全局快捷键后框选屏幕区域，软件在本地执行 OCR，再调用 DeepSeek V4 翻译，并把结果覆盖在原文位置或显示在原文旁边。
 
+> 当前项目仍在积极开发中。首次使用前需要自行申请并配置 DeepSeek API Key。
+
 ## 功能
 
 - 可录制和保存的全局快捷键（默认 `Alt + Shift + T`）
@@ -70,3 +72,11 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 publish src\ScreenTransl
 - 屏幕捕获当前使用 GDI 兼容后端；Windows 图形捕获的 D3D11 单帧后端尚未启用。
 - UAC 安全桌面、DRM 视频和部分受保护窗口可能无法截图。
 - 浏览器跟随仅支持安装配套扩展后的 Chrome / Edge 普通 `http://`、`https://` 页面。
+
+## 参与贡献
+
+欢迎提交 Issue 和 Pull Request。开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。
+
+## 开源许可
+
+本项目使用 [MIT License](LICENSE) 开源。

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ScreenTranslator.sln --configfile NuGet.Config
+
+      - name: Build
+        run: dotnet build ScreenTranslator.sln -c Release --no-restore
+
+      - name: Test .NET
+        run: dotnet test ScreenTranslator.sln -c Release --no-build
+
+      - name: Test browser extension
+        run: node --test browser-extension/tests/content.test.js browser-extension/tests/document-state.test.js
