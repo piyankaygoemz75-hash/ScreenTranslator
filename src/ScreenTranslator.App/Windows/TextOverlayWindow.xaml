@@ -14,12 +14,12 @@
         Topmost="True">
     <Border x:Name="RootCard"
             IsHitTestVisible="False"
-            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            Background="{DynamicResource TranslationSurfaceBrush}"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
             BorderThickness="1"
             CornerRadius="8"
             Padding="9,6"
-            Opacity="0.96">
+            Opacity="1">
         <Border.ContextMenu>
             <ContextMenu DataContext="{Binding PlacementTarget.DataContext,
                                               RelativeSource={RelativeSource Self}}"
@@ -46,7 +46,7 @@
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
                         Margin="0,-30,-6,0"
-                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                        Background="{DynamicResource TranslationSurfaceBrush}">
                 <ui:Button Content="复制"
                            Padding="7,3"
                            Command="{Binding CopyCommand}" />

@@ -115,9 +115,7 @@
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Border Grid.Column="1"
-                            Background="{DynamicResource AccentFillColorSecondaryBrush}"
-                            CornerRadius="999"
-                            Padding="10,4"
+                            Style="{StaticResource CompactBadgeStyle}"
                             Height="28"
                             VerticalAlignment="Top">
                         <TextBlock Text="旁显" FontSize="12" />

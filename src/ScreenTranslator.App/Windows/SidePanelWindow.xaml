@@ -22,11 +22,11 @@
     <Border x:Name="RootCard"
             behaviors:MouseWheelRouter.IsEnabled="True"
             Margin="14"
-            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            Background="{DynamicResource TranslationSurfaceBrush}"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
             BorderThickness="1"
             CornerRadius="12"
-            Opacity="0.97">
+            Opacity="1">
         <Border.Effect>
             <DropShadowEffect Color="Black"
                               BlurRadius="24"

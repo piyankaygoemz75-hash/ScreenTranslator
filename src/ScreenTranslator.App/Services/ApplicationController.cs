@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Windows.Input;
 using Microsoft.Win32;
+using ScreenTranslator.App.Services.Appearance;
 using ScreenTranslator.App.Services.Browser;
 using ScreenTranslator.App.Services.Capture;
 using ScreenTranslator.App.Services.Hotkeys;
@@ -1072,6 +1073,8 @@ public sealed partial class ApplicationController : IDisposable
                 : ApplicationTheme.Light,
         };
         ApplicationThemeManager.Apply(theme);
+        Application.Current.Resources["TranslationSurfaceBrush"] =
+            TranslationSurfacePalette.CreateBrush(theme);
     }
 
     private static void ApplyStartupRegistration(bool enabled)
