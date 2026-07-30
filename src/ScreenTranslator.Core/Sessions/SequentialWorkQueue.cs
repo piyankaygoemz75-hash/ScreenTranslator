@@ -59,7 +59,7 @@ public sealed class SequentialWorkQueue<T> : IAsyncDisposable
 
     public int PendingCount => Volatile.Read(ref _pendingCount);
 
-    public async ValueTask EnqueueAsync(
+    public async ValueTask<int> EnqueueAsync(
         T item,
         CancellationToken cancellationToken = default)
     {
@@ -77,6 +77,7 @@ public sealed class SequentialWorkQueue<T> : IAsyncDisposable
         try
         {
             await _channel.Writer.WriteAsync(item, cancellationToken);
+            return pending;
         }
         catch
         {

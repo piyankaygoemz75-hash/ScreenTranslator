@@ -7,7 +7,7 @@
         Topmost="True"
         Background="Black"
         Cursor="Cross"
-        KeyDown="Window_OnKeyDown"
+        PreviewKeyDown="Window_OnKeyDown"
         MouseLeftButtonDown="Window_OnMouseLeftButtonDown"
         MouseMove="Window_OnMouseMove"
         MouseLeftButtonUp="Window_OnMouseLeftButtonUp"
@@ -55,16 +55,10 @@
                 Padding="14,8"
                 CornerRadius="8"
                 Background="#D91F1F1F">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding InstructionText}"
-                           Foreground="White"
-                           FontFamily="Segoe UI Variable, Microsoft YaHei UI"
-                           FontWeight="SemiBold" />
-                <TextBlock Text="{Binding CancelText}"
-                           Foreground="#BFFFFFFF"
-                           FontFamily="Segoe UI Variable, Microsoft YaHei UI"
-                           Margin="6,0,0,0" />
-            </StackPanel>
+            <TextBlock Text="{Binding ModeState.InstructionText}"
+                       Foreground="White"
+                       FontFamily="Segoe UI Variable, Microsoft YaHei UI"
+                       FontWeight="SemiBold" />
         </Border>
     </Grid>
 </Window>

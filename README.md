@@ -52,9 +52,9 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 ## 连续框选
 
-在“常规”页点击“连续框选”，或在托盘菜单选择“连续框选翻译”。每次松开鼠标后，当前区域会立即进入队列，软件同时开始下一次框选；OCR 和 DeepSeek 请求按框选顺序逐条处理，避免并发请求造成结果错序或触发限流。
+普通快捷键打开框选界面后默认为单条框选，按 `Tab` 可随时切换为多条框选；再次按 `Tab` 可切回单条，并在当前选择完成后结束本轮。也可以在“常规”页点击“连续框选”，或在托盘菜单选择“连续框选翻译”，直接以多条模式开始。
 
-按 `Esc` 或单击鼠标右键只会结束继续框选，已经排队的内容仍会翻译完成。队列最多容纳 5 条，满载时会等待前一条处理完再继续。旁显模式会把多条结果汇总到一个可滚动面板，覆盖模式则保留每一条译文。
+每次松开鼠标后，当前区域会立即进入队列，OCR 和 DeepSeek 请求按框选顺序逐条处理。多条模式的总框选次数不限，但尚未完成的任务最多积压 5 条；真正达到积压上限时，本轮框选会停止并显示提醒，已经排队的内容仍会翻译完成。按 `Esc` 或右键也只结束继续框选，不取消队列。旁显模式会把多条结果汇总到一个可滚动面板，覆盖模式则保留每一条译文。
 
 ## 启用 Chrome / Edge 网页跟随
 
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 ## 从源码构建发布包
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.1
+powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.2
 ```
 
 脚本会生成自包含程序、便携 ZIP 和浏览器扩展 ZIP。安装器还需要 Inno Setup 6；正式 tag 的 GitHub Actions 会自动构建安装器、执行静默安装/卸载测试、生成 SHA-256 并发布 Release。

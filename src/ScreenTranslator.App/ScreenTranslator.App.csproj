@@ -6,7 +6,7 @@
     <RootNamespace>ScreenTranslator.App</RootNamespace>
     <Product>屏译</Product>
     <Description>Windows 屏幕框选 OCR 与 DeepSeek AI 翻译工具</Description>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>

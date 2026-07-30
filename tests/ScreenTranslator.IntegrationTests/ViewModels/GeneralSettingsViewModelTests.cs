@@ -5,6 +5,23 @@ namespace ScreenTranslator.IntegrationTests.ViewModels;
 public sealed class GeneralSettingsViewModelTests
 {
     [Fact]
+    public void Normal_And_Multiple_Commands_Remain_Distinct_Entries()
+    {
+        var viewModel = new GeneralSettingsViewModel();
+        var normalRequests = 0;
+        var multipleRequests = 0;
+        viewModel.StartCaptureRequested += (_, _) => normalRequests++;
+        viewModel.StartContinuousCaptureRequested +=
+            (_, _) => multipleRequests++;
+
+        viewModel.StartCaptureCommand.Execute(null);
+        viewModel.StartContinuousCaptureCommand.Execute(null);
+
+        Assert.Equal(1, normalRequests);
+        Assert.Equal(1, multipleRequests);
+    }
+
+    [Fact]
     public void Continuous_Command_Raises_Request()
     {
         var viewModel = new GeneralSettingsViewModel();

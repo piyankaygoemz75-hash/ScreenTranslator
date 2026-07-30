@@ -5,6 +5,26 @@ namespace ScreenTranslator.Core.Tests.Sessions;
 public sealed class SequentialWorkQueueTests
 {
     [Fact]
+    public async Task Enqueue_Returns_The_Pending_Count_At_Acceptance()
+    {
+        var release = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var queue = new SequentialWorkQueue<int>(
+            2,
+            async (_, cancellationToken) =>
+                await release.Task.WaitAsync(cancellationToken));
+
+        var firstPending = await queue.EnqueueAsync(1);
+        var secondPending = await queue.EnqueueAsync(2);
+
+        Assert.Equal(1, firstPending);
+        Assert.Equal(2, secondPending);
+
+        release.TrySetResult();
+        await queue.CompleteAsync();
+    }
+
+    [Fact]
     public async Task Processes_Items_In_FIFO_Order()
     {
         var processed = new List<int>();

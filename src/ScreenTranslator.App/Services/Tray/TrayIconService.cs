@@ -84,6 +84,20 @@ public sealed class TrayIconService : IDisposable
 
     public bool IsHotkeyPaused { get; private set; }
 
+    public void ShowInformation(string title, string message)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _notifyIcon.ShowBalloonTip(
+            4000,
+            title,
+            message,
+            Forms.ToolTipIcon.Info);
+    }
+
     public void Dispose()
     {
         if (_disposed)

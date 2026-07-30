@@ -23,6 +23,7 @@ using ScreenTranslator.Core.Settings;
 using ScreenTranslator.Core.Translation;
 using Wpf.Ui.Appearance;
 using Application = System.Windows.Application;
+using CaptureMode = ScreenTranslator.App.ViewModels.CaptureMode;
 using MessageBox = System.Windows.MessageBox;
 using Point = System.Windows.Point;
 using Rect = System.Windows.Rect;
@@ -55,7 +56,10 @@ public sealed partial class ApplicationController : IDisposable
     private bool _applyingSettings;
     private bool _exitRequested;
     private bool _disposed;
-    private CancellationTokenSource? _continuousCaptureCancellation;
+    private bool _captureSurfacesSuppressed;
+    private bool _continuousAcquisitionActive;
+    private int _continuousItemFailureCount;
+    private CancellationTokenSource? _captureSessionCancellation;
     private SequentialWorkQueue<TranslationCaptureWorkItem>? _continuousCaptureQueue;
     private ContinuousSidePanelWindow? _continuousSidePanel;
     private ContinuousResultsViewModel? _continuousResults;
@@ -181,125 +185,32 @@ public sealed partial class ApplicationController : IDisposable
     }
 
     private void OnCaptureRequested(object? sender, EventArgs e) =>
-        _ = CaptureAndTranslateAsync();
+        _ = RunCaptureSessionAsync(CaptureMode.Single);
 
     private void OnContinuousCaptureRequested(object? sender, EventArgs e) =>
-        _ = RunContinuousCaptureAsync();
+        _ = RunCaptureSessionAsync(CaptureMode.Multiple);
 
-    private async Task CaptureAndTranslateAsync()
+    private async Task RunCaptureSessionAsync(CaptureMode initialMode)
     {
-        if (!await _captureGate.WaitAsync(0))
+        if (_captureSessionCancellation is not null)
         {
             MainWindow.StatusText = "正在处理上一项翻译";
             return;
         }
 
-        TranslationSession? session = null;
+        string? apiKey;
         try
         {
-            session = _sessions.Start();
-            MainWindow.IsCaptureAvailable = false;
-            MainWindow.StatusText = "正在截取屏幕…";
-
-            var sourceWindowHandle = ForegroundWindowMonitor.CaptureForegroundRootWindow();
-            var capturedBrowser = BrowserWindowEventMonitor.CaptureForegroundBrowser();
-            CloseResultWindows();
-            _mainWindow?.Hide();
-            await _application.Dispatcher.InvokeAsync(
-                () => { },
-                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-
-            var captures = await _screenCapture.CaptureAllAsync(session.CancellationToken);
-            if (captures.Count == 0)
-            {
-                throw new InvalidOperationException("没有检测到可用的显示器。");
-            }
-
-            MainWindow.StatusText = "请框选要翻译的文字";
-            var selection = await SelectRegionAsync(captures, session.CancellationToken);
-            if (selection is null)
-            {
-                _sessions.Cancel(session.Id);
-                MainWindow.StatusText = "已取消框选";
-                return;
-            }
-
-            _sessions.TryTransition(session.Id, TranslationSessionState.Ocr);
-            MainWindow.StatusText = "正在本地识别文字…";
-
-            var relativeBounds = new PixelRect(
-                selection.Bounds.X - selection.Capture.Monitor.Bounds.X,
-                selection.Bounds.Y - selection.Capture.Monitor.Bounds.Y,
-                selection.Bounds.Width,
-                selection.Bounds.Height);
-            relativeBounds = relativeBounds.Intersect(
-                new PixelRect(
-                    0,
-                    0,
-                    selection.Capture.Bitmap.Width,
-                    selection.Capture.Bitmap.Height));
-
-            if (!relativeBounds.IsUsable)
-            {
-                throw new InvalidOperationException("框选区域太小，请重新选择。");
-            }
-
-            var cropped = CapturedBitmapCropper.Crop(
-                selection.Capture.Bitmap,
-                relativeBounds);
-            var settings = CollectSettings();
-            var blocks = await _ocrEngine.RecognizeAsync(
-                cropped,
-                settings.SourceLanguage,
-                session.CancellationToken);
-
-            if (blocks.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "框选区域内没有识别到文字。可尝试放大内容或安装对应的 Windows OCR 语言包。");
-            }
-
-            _lastWork = new LastTranslationWork(
-                selection.Capture.Monitor,
-                selection.Bounds,
-                blocks,
-                capturedBrowser,
-                sourceWindowHandle);
-
-            _sessions.TryTransition(session.Id, TranslationSessionState.Translating);
-            await TranslateAndShowAsync(_lastWork, settings, session);
-        }
-        catch (OperationCanceledException)
-        {
-            MainWindow.StatusText = "翻译已取消";
+            apiKey = await _secretStore.GetAsync(
+                DeepSeekTranslationProvider.ApiKeyName);
         }
         catch (Exception exception)
         {
-            if (session is not null)
-            {
-                _sessions.TryTransition(session.Id, TranslationSessionState.Failed);
-            }
-
-            MainWindow.StatusText = "翻译失败";
+            MainWindow.StatusText = "无法读取翻译设置";
             ShowFailure(exception.Message);
-        }
-        finally
-        {
-            MainWindow.IsCaptureAvailable = true;
-            _captureGate.Release();
-        }
-    }
-
-    private async Task RunContinuousCaptureAsync()
-    {
-        if (_continuousCaptureCancellation is not null)
-        {
-            MainWindow.StatusText = "连续框选已经在运行";
             return;
         }
 
-        var apiKey = await _secretStore.GetAsync(
-            DeepSeekTranslationProvider.ApiKeyName);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             MainWindow.StatusText = "请先在“翻译”中配置 DeepSeek API Key";
@@ -314,35 +225,90 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         var acquisitionCancellation = new CancellationTokenSource();
-        var queue = new SequentialWorkQueue<TranslationCaptureWorkItem>(
-            capacity: 5,
-            ProcessContinuousWorkItemAsync);
-        _continuousCaptureCancellation = acquisitionCancellation;
-        _continuousCaptureQueue = queue;
-        GeneralSettings.IsContinuousCaptureActive = true;
+        SequentialWorkQueue<TranslationCaptureWorkItem>? queue = null;
+        var mode = initialMode;
+        var multipleStarted = false;
+        var queueLimitReached = false;
+        var selectionCancelled = false;
+        string? sessionFailureMessage = null;
+        _captureSessionCancellation = acquisitionCancellation;
         MainWindow.IsCaptureAvailable = false;
-
-        queue.PendingCountChanged += OnContinuousPendingCountChanged;
-        queue.ItemFailed += OnContinuousItemFailed;
 
         try
         {
-            MainWindow.StatusText = "连续框选已开始 · Esc 或右键结束";
+            if (initialMode == CaptureMode.Single)
+            {
+                CloseResultWindows();
+            }
+
             while (!acquisitionCancellation.IsCancellationRequested)
             {
-                var item = await AcquireContinuousWorkItemAsync(
+                var acquired = await AcquireCaptureWorkItemAsync(
+                    mode,
                     acquisitionCancellation.Token);
-                if (item is null)
+                if (acquired is null)
                 {
+                    selectionCancelled = true;
                     break;
                 }
 
-                MainWindow.StatusText = queue.PendingCount >= queue.Capacity
-                    ? "队列已满，正在等待处理…"
-                    : "已加入队列，继续框选";
-                await queue.EnqueueAsync(
-                    item,
+                mode = acquired.Mode;
+                if (!CaptureSessionPolicy.ShouldUseQueue(
+                        mode,
+                        multipleStarted))
+                {
+                    await ProcessCaptureWorkItemAsync(
+                        acquired.Item,
+                        preserveExistingResults: false,
+                        acquisitionCancellation.Token);
+                    break;
+                }
+
+                if (queue is null)
+                {
+                    queue = new SequentialWorkQueue<TranslationCaptureWorkItem>(
+                        capacity: 5,
+                        ProcessContinuousWorkItemAsync);
+                    queue.PendingCountChanged +=
+                        OnContinuousPendingCountChanged;
+                    queue.ItemFailed += OnContinuousItemFailed;
+                    _continuousCaptureQueue = queue;
+                    Interlocked.Exchange(
+                        ref _continuousItemFailureCount,
+                        0);
+                    _continuousAcquisitionActive = true;
+                    GeneralSettings.IsContinuousCaptureActive = true;
+                }
+
+                multipleStarted = true;
+                var pendingAtAcceptance = await queue.EnqueueAsync(
+                    acquired.Item,
                     acquisitionCancellation.Token);
+                var decision = CaptureSessionPolicy.DecideAfterEnqueue(
+                    mode,
+                    pendingAtAcceptance,
+                    queue.Capacity);
+                if (decision == CaptureAcquisitionDecision.StopQueueFull)
+                {
+                    queueLimitReached = true;
+                    MainWindow.StatusText =
+                        "处理队列已满，本轮框选已停止；剩余译文将继续完成";
+                    _tray.ShowInformation(
+                        "多条框选已停止",
+                        "处理队列已满，剩余译文将继续完成。");
+                    break;
+                }
+
+                if (decision == CaptureAcquisitionDecision.StopAfterCurrent)
+                {
+                    MainWindow.StatusText =
+                        "已加入最后一条，正在处理剩余译文";
+                    break;
+                }
+
+                MainWindow.StatusText =
+                    $"已加入队列，继续框选 · 待处理 {pendingAtAcceptance}";
+                mode = CaptureMode.Multiple;
             }
         }
         catch (OperationCanceledException)
@@ -351,51 +317,97 @@ public sealed partial class ApplicationController : IDisposable
         }
         catch (Exception exception)
         {
-            MainWindow.StatusText = $"连续框选已停止：{exception.Message}";
+            sessionFailureMessage = exception.Message;
+            MainWindow.StatusText = multipleStarted
+                ? $"多条框选已停止：{exception.Message}"
+                : "翻译失败";
+            if (!multipleStarted)
+            {
+                ShowFailure(exception.Message);
+            }
         }
         finally
         {
+            _continuousAcquisitionActive = false;
             acquisitionCancellation.Cancel();
 
-            try
+            if (queue is not null)
             {
-                await queue.CompleteAsync();
-            }
-            catch (OperationCanceledException)
-            {
+                try
+                {
+                    await queue.CompleteAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                queue.PendingCountChanged -=
+                    OnContinuousPendingCountChanged;
+                queue.ItemFailed -= OnContinuousItemFailed;
+                await queue.DisposeAsync();
             }
 
-            queue.PendingCountChanged -= OnContinuousPendingCountChanged;
-            queue.ItemFailed -= OnContinuousItemFailed;
-            await queue.DisposeAsync();
+            RestoreResultWindowsAfterCapture();
             acquisitionCancellation.Dispose();
-            _continuousCaptureCancellation = null;
+            _captureSessionCancellation = null;
             _continuousCaptureQueue = null;
             GeneralSettings.IsContinuousCaptureActive = false;
             GeneralSettings.ContinuousPendingCount = 0;
             MainWindow.IsCaptureAvailable = true;
-            MainWindow.StatusText = "连续框选已结束 · 队列处理完成";
+            if (queue is not null)
+            {
+                var failedItemCount = Volatile.Read(
+                    ref _continuousItemFailureCount);
+                MainWindow.StatusText = sessionFailureMessage is not null
+                    ? $"多条框选异常结束：{sessionFailureMessage}"
+                    : failedItemCount > 0
+                        ? $"多条框选已结束 · {failedItemCount} 项失败，其余处理完成"
+                        : queueLimitReached
+                            ? "处理队列已满 · 剩余译文已处理完成"
+                            : "多条框选已结束 · 队列处理完成";
+            }
+            else if (selectionCancelled)
+            {
+                MainWindow.StatusText = "已取消框选";
+            }
+
             _captureGate.Release();
         }
     }
 
-    private async Task<TranslationCaptureWorkItem?>
-        AcquireContinuousWorkItemAsync(CancellationToken cancellationToken)
+    private async Task<AcquiredCapture?> AcquireCaptureWorkItemAsync(
+        CaptureMode mode,
+        CancellationToken cancellationToken)
     {
-        MainWindow.StatusText =
-            $"连续框选 · Esc 或右键结束 · 待处理 {GeneralSettings.ContinuousPendingCount}";
-        var sourceWindowHandle =
-            ForegroundWindowMonitor.CaptureForegroundRootWindow();
-        var capturedBrowser =
-            BrowserWindowEventMonitor.CaptureForegroundBrowser();
-        _mainWindow?.Hide();
-        SetResultWindowsCaptureVisibility(visible: false);
-        await _application.Dispatcher.InvokeAsync(
-            () => { },
-            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        MainWindow.StatusText = mode == CaptureMode.Multiple
+            ? $"多条框选 · 待处理 {GeneralSettings.ContinuousPendingCount}"
+            : "请框选要翻译的文字";
 
         try
         {
+            var context = await CaptureContextSequencer.CaptureAsync(
+                SuppressResultWindowsForCapture,
+                () => _application.Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle)
+                    .Task,
+                () =>
+                {
+                    var sourceWindowHandle =
+                        ForegroundWindowMonitor.CaptureForegroundRootWindow();
+                    var capturedBrowser =
+                        BrowserWindowEventMonitor.CaptureForegroundBrowser();
+                    if (capturedBrowser?.Snapshot.Handle
+                        != sourceWindowHandle)
+                    {
+                        capturedBrowser = null;
+                    }
+
+                    return new CaptureSourceContext(
+                        sourceWindowHandle,
+                        capturedBrowser);
+                });
+
             var captures = await _screenCapture.CaptureAllAsync(
                 cancellationToken);
             if (captures.Count == 0)
@@ -407,7 +419,7 @@ public sealed partial class ApplicationController : IDisposable
             var selection = await SelectRegionAsync(
                 captures,
                 cancellationToken,
-                continuous: true);
+                mode);
             if (selection is null)
             {
                 return null;
@@ -426,73 +438,85 @@ public sealed partial class ApplicationController : IDisposable
                     selection.Capture.Bitmap.Height));
             if (!relativeBounds.IsUsable)
             {
-                MainWindow.StatusText = "框选区域太小，继续选择";
-                return null;
+                throw new InvalidOperationException(
+                    "框选区域太小，请重新选择。");
             }
 
-            return new TranslationCaptureWorkItem(
+            var item = new TranslationCaptureWorkItem(
                 selection.Capture.Monitor,
                 selection.Bounds,
                 CapturedBitmapCropper.Crop(
                     selection.Capture.Bitmap,
                     relativeBounds),
-                capturedBrowser,
-                sourceWindowHandle,
+                context.CapturedBrowser,
+                context.SourceWindowHandle,
                 CollectSettings());
+            return new AcquiredCapture(item, selection.Mode);
         }
         finally
         {
-            SetResultWindowsCaptureVisibility(_overlaysVisible);
+            RestoreResultWindowsAfterCapture();
         }
     }
 
     private async Task ProcessContinuousWorkItemAsync(
         TranslationCaptureWorkItem item,
+        CancellationToken cancellationToken) =>
+        await _application.Dispatcher.InvokeAsync(
+                () => ProcessCaptureWorkItemAsync(
+                    item,
+                    preserveExistingResults: true,
+                    cancellationToken))
+            .Task
+            .Unwrap();
+
+    private async Task ProcessCaptureWorkItemAsync(
+        TranslationCaptureWorkItem item,
+        bool preserveExistingResults,
         CancellationToken cancellationToken)
     {
-        await _application.Dispatcher.InvokeAsync(async () =>
+        var session = _sessions.Start();
+        try
         {
-            var session = _sessions.Start();
-            try
+            _sessions.TryTransition(
+                session.Id,
+                TranslationSessionState.Ocr);
+            MainWindow.StatusText = preserveExistingResults
+                ? "正在处理多条框选队列 · 本地 OCR"
+                : "正在本地识别文字…";
+            var blocks = await _ocrEngine.RecognizeAsync(
+                item.Bitmap,
+                item.Settings.SourceLanguage,
+                cancellationToken);
+            if (blocks.Count == 0)
             {
-                _sessions.TryTransition(
-                    session.Id,
-                    TranslationSessionState.Ocr);
-                MainWindow.StatusText = "正在处理连续框选队列 · 本地 OCR";
-                var blocks = await _ocrEngine.RecognizeAsync(
-                    item.Bitmap,
-                    item.Settings.SourceLanguage,
-                    cancellationToken);
-                if (blocks.Count == 0)
-                {
-                    throw new InvalidOperationException(
-                        "框选区域内没有识别到文字。");
-                }
+                throw new InvalidOperationException(
+                    "框选区域内没有识别到文字。");
+            }
 
-                var work = new LastTranslationWork(
-                    item.Monitor,
-                    item.AbsoluteSelection,
-                    blocks,
-                    item.CapturedBrowser,
-                    item.SourceWindowHandle);
-                _lastWork = work;
-                _sessions.TryTransition(
-                    session.Id,
-                    TranslationSessionState.Translating);
-                await TranslateAndShowAsync(
-                    work,
-                    item.Settings,
-                    session,
-                    preserveExistingResults: true);
-            }
-            catch
-            {
-                _sessions.TryTransition(
-                    session.Id,
-                    TranslationSessionState.Failed);
-                throw;
-            }
-        }).Task.Unwrap();
+            var work = new LastTranslationWork(
+                item.Monitor,
+                item.AbsoluteSelection,
+                blocks,
+                item.CapturedBrowser,
+                item.SourceWindowHandle);
+            _lastWork = work;
+            _sessions.TryTransition(
+                session.Id,
+                TranslationSessionState.Translating);
+            await TranslateAndShowAsync(
+                work,
+                item.Settings,
+                session,
+                preserveExistingResults);
+        }
+        catch
+        {
+            _sessions.TryTransition(
+                session.Id,
+                TranslationSessionState.Failed);
+            throw;
+        }
     }
 
     private void OnContinuousPendingCountChanged(
@@ -501,8 +525,13 @@ public sealed partial class ApplicationController : IDisposable
     {
         _application.Dispatcher.BeginInvoke(() =>
         {
+            if (!ReferenceEquals(sender, _continuousCaptureQueue))
+            {
+                return;
+            }
+
             GeneralSettings.ContinuousPendingCount = pendingCount;
-            if (GeneralSettings.IsContinuousCaptureActive)
+            if (_continuousAcquisitionActive)
             {
                 MainWindow.StatusText =
                     $"连续框选中 · 待处理 {pendingCount}";
@@ -514,20 +543,46 @@ public sealed partial class ApplicationController : IDisposable
         object? sender,
         WorkItemFailedEventArgs<TranslationCaptureWorkItem> e)
     {
+        Interlocked.Increment(ref _continuousItemFailureCount);
         _application.Dispatcher.BeginInvoke(() =>
+        {
+            if (!ReferenceEquals(sender, _continuousCaptureQueue))
+            {
+                return;
+            }
+
             MainWindow.StatusText =
-                $"一项翻译失败，连续模式继续：{e.Exception.Message}");
+                $"一项翻译失败，连续模式继续：{e.Exception.Message}";
+        });
     }
 
-    private void SetResultWindowsCaptureVisibility(bool visible)
+    private void SuppressResultWindowsForCapture()
     {
+        _captureSurfacesSuppressed = true;
+        _mainWindow?.Hide();
         foreach (var window in _resultWindows.ToArray())
         {
             if (window is TextOverlayWindow overlay)
             {
-                overlay.SetUserVisibility(visible);
+                overlay.SetUserVisibility(false);
             }
-            else if (visible)
+            else
+            {
+                window.Hide();
+            }
+        }
+    }
+
+    private void RestoreResultWindowsAfterCapture()
+    {
+        _captureSurfacesSuppressed = false;
+        foreach (var window in _resultWindows.ToArray())
+        {
+            if (window is TextOverlayWindow overlay)
+            {
+                overlay.SetUserVisibility(_overlaysVisible);
+            }
+            else if (_overlaysVisible)
             {
                 window.Show();
             }
@@ -536,6 +591,9 @@ public sealed partial class ApplicationController : IDisposable
                 window.Hide();
             }
         }
+
+        _overlayFocusCoordinator?.HandleForegroundChanged(
+            ForegroundWindowMonitor.CaptureForegroundRootWindow());
     }
 
     private async Task TranslateAndShowAsync(
@@ -599,16 +657,18 @@ public sealed partial class ApplicationController : IDisposable
     private async Task<SelectedRegion?> SelectRegionAsync(
         IReadOnlyList<MonitorCapture> captures,
         CancellationToken cancellationToken,
-        bool continuous = false)
+        CaptureMode initialMode)
     {
         var completion = new TaskCompletionSource<SelectedRegion?>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var windows = new List<SelectionOverlayWindow>(captures.Count);
+        var modeState = new CaptureModeState(initialMode);
 
         foreach (var capture in captures)
         {
             var monitor = capture.Monitor;
-            var window = new SelectionOverlayWindow();
+            var window = new SelectionOverlayWindow(
+                new SelectionOverlayViewModel(modeState));
             window.Configure(
                 capture.Preview,
                 new Rect(
@@ -618,8 +678,7 @@ public sealed partial class ApplicationController : IDisposable
                     monitor.Bounds.Height / monitor.ScaleY),
                 new Point(monitor.Bounds.X, monitor.Bounds.Y),
                 monitor.ScaleX,
-                monitor.ScaleY,
-                continuous);
+                monitor.ScaleY);
             window.SelectionCompleted += (_, args) =>
             {
                 completion.TrySetResult(
@@ -629,7 +688,8 @@ public sealed partial class ApplicationController : IDisposable
                             args.BoundsInPhysicalPixels.X,
                             args.BoundsInPhysicalPixels.Y,
                             args.BoundsInPhysicalPixels.Width,
-                            args.BoundsInPhysicalPixels.Height)));
+                            args.BoundsInPhysicalPixels.Height),
+                        args.Mode));
             };
             window.SelectionCancelled += (_, _) => completion.TrySetResult(null);
             window.Closed += (_, _) =>
@@ -899,6 +959,19 @@ public sealed partial class ApplicationController : IDisposable
         _resultWindows.Add(window);
         window.Closed += (_, _) => _resultWindows.Remove(window);
         window.Show();
+        if (!_captureSurfacesSuppressed)
+        {
+            return;
+        }
+
+        if (window is TextOverlayWindow overlay)
+        {
+            overlay.SetUserVisibility(false);
+        }
+        else
+        {
+            window.Hide();
+        }
     }
 
     private void CloseResultWindows()
@@ -1496,7 +1569,7 @@ public sealed partial class ApplicationController : IDisposable
         if (!_disposed && !_exitRequested)
         {
             _exitRequested = true;
-            _continuousCaptureCancellation?.Cancel();
+            _captureSessionCancellation?.Cancel();
             if (_continuousCaptureQueue is not null)
             {
                 _ = _continuousCaptureQueue.DisposeAsync();
@@ -1520,7 +1593,7 @@ public sealed partial class ApplicationController : IDisposable
         }
 
         _disposed = true;
-        _continuousCaptureCancellation?.Cancel();
+        _captureSessionCancellation?.Cancel();
         if (_continuousCaptureQueue is not null)
         {
             try
@@ -1555,7 +1628,18 @@ public sealed partial class ApplicationController : IDisposable
         _settingsGate.Dispose();
     }
 
-    private sealed record SelectedRegion(MonitorCapture Capture, PixelRect Bounds);
+    private sealed record CaptureSourceContext(
+        IntPtr SourceWindowHandle,
+        CapturedBrowserWindow? CapturedBrowser);
+
+    private sealed record AcquiredCapture(
+        TranslationCaptureWorkItem Item,
+        CaptureMode Mode);
+
+    private sealed record SelectedRegion(
+        MonitorCapture Capture,
+        PixelRect Bounds,
+        CaptureMode Mode);
 
     private sealed record LastTranslationWork(
         ScreenMonitor Monitor,

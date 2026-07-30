@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ScreenTranslator.App.ViewModels;
+using CaptureMode = ScreenTranslator.App.ViewModels.CaptureMode;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using Point = System.Windows.Point;
@@ -40,11 +41,9 @@ public partial class SelectionOverlayWindow : Window
         Rect monitorBoundsDips,
         Point monitorOriginPhysical,
         double dpiScaleX,
-        double dpiScaleY,
-        bool continuous = false)
+        double dpiScaleY)
     {
         _viewModel.Screenshot = screenshot;
-        _viewModel.IsContinuous = continuous;
         _monitorOriginPhysical = monitorOriginPhysical;
         _dpiScaleX = Math.Max(dpiScaleX, 0.01);
         _dpiScaleY = Math.Max(dpiScaleY, 0.01);
@@ -94,13 +93,17 @@ public partial class SelectionOverlayWindow : Window
         Int32Rect physical = ToPhysicalPixels(selection);
         if (physical.Width < 8 || physical.Height < 8)
         {
-            CancelSelection();
+            _viewModel.Reset();
+            UpdateSelectionVisual();
             return;
         }
 
         SelectionCompleted?.Invoke(
             this,
-            new ScreenSelectionCompletedEventArgs(selection, physical));
+            new ScreenSelectionCompletedEventArgs(
+                selection,
+                physical,
+                _viewModel.ModeState.Mode));
         Close();
     }
 
@@ -109,6 +112,13 @@ public partial class SelectionOverlayWindow : Window
 
     private void Window_OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Tab)
+        {
+            e.Handled = true;
+            _viewModel.TryToggleMode();
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
@@ -202,9 +212,12 @@ public partial class SelectionOverlayWindow : Window
 
 public sealed class ScreenSelectionCompletedEventArgs(
     Rect boundsInWindowDips,
-    Int32Rect boundsInPhysicalPixels) : EventArgs
+    Int32Rect boundsInPhysicalPixels,
+    CaptureMode mode) : EventArgs
 {
     public Rect BoundsInWindowDips { get; } = boundsInWindowDips;
 
     public Int32Rect BoundsInPhysicalPixels { get; } = boundsInPhysicalPixels;
+
+    public CaptureMode Mode { get; } = mode;
 }

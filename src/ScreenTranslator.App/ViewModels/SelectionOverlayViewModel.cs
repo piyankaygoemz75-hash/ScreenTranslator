@@ -11,7 +11,13 @@ public sealed class SelectionOverlayViewModel : ObservableObject
     private Rect _selection;
     private Point _anchor;
     private bool _isSelecting;
-    private bool _isContinuous;
+
+    public SelectionOverlayViewModel(CaptureModeState? modeState = null)
+    {
+        ModeState = modeState ?? new CaptureModeState();
+    }
+
+    public CaptureModeState ModeState { get; }
 
     public ImageSource? Screenshot
     {
@@ -40,29 +46,19 @@ public sealed class SelectionOverlayViewModel : ObservableObject
 
     public bool HasSelection => Selection.Width >= 1 && Selection.Height >= 1;
 
-    public bool IsContinuous
-    {
-        get => _isContinuous;
-        set
-        {
-            if (SetProperty(ref _isContinuous, value))
-            {
-                OnPropertyChanged(nameof(InstructionText));
-                OnPropertyChanged(nameof(CancelText));
-            }
-        }
-    }
-
-    public string InstructionText => IsContinuous
-        ? "连续框选 · 松开后继续选择"
-        : "拖动框选要翻译的内容";
-
-    public string CancelText => IsContinuous
-        ? "·  Esc 或右键结束"
-        : "·  Esc 取消";
-
     public string SelectionSizeText =>
         $"{Math.Round(Selection.Width)} × {Math.Round(Selection.Height)}";
+
+    public bool TryToggleMode()
+    {
+        if (IsSelecting)
+        {
+            return false;
+        }
+
+        ModeState.Toggle();
+        return true;
+    }
 
     public void BeginSelection(Point point)
     {
