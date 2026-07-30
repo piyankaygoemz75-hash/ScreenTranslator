@@ -147,7 +147,7 @@ public sealed class HotkeySettingsViewModel : ObservableObject
 
     public HotkeySettingsViewModel()
     {
-        BeginRecordingCommand = new RelayCommand(BeginRecording, () => IsEnabled);
+        BeginRecordingCommand = new RelayCommand(BeginRecording);
         CancelRecordingCommand = new RelayCommand(CancelRecording, () => IsRecording);
         UseDefaultCommand = new RelayCommand(
             () => Submit(HotkeyGesture.Default),
@@ -163,13 +163,7 @@ public sealed class HotkeySettingsViewModel : ObservableObject
     public bool IsEnabled
     {
         get => _isEnabled;
-        set
-        {
-            if (SetProperty(ref _isEnabled, value))
-            {
-                BeginRecordingCommand.NotifyCanExecuteChanged();
-            }
-        }
+        set => SetProperty(ref _isEnabled, value);
     }
 
     public string StatusText
@@ -186,7 +180,6 @@ public sealed class HotkeySettingsViewModel : ObservableObject
             if (SetProperty(ref _isRecording, value))
             {
                 OnPropertyChanged(nameof(RecordButtonText));
-                BeginRecordingCommand.NotifyCanExecuteChanged();
                 CancelRecordingCommand.NotifyCanExecuteChanged();
                 UseDefaultCommand.NotifyCanExecuteChanged();
             }

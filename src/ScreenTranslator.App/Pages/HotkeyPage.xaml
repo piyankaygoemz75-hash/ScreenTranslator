@@ -42,7 +42,6 @@
                     <ui:Button Grid.Column="1"
                                Content="{Binding RecordButtonText}"
                                Command="{Binding BeginRecordingCommand}"
-                               IsEnabled="{Binding IsEnabled}"
                                Focusable="True"
                                VerticalAlignment="Center"
                                Margin="20,0,0,0" />
