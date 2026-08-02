@@ -43,7 +43,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox Text="{Binding SavedApiKeyMask}"
+                            <TextBox Text="{Binding SavedApiKeyMask, Mode=OneWay}"
                                      IsReadOnly="True"
                                      IsTabStop="False"
                                      Padding="10,7" />

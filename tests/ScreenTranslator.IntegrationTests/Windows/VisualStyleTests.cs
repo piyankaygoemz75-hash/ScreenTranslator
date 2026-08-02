@@ -59,6 +59,27 @@ public sealed class VisualStyleTests
     }
 
     [Fact]
+    public void Saved_Api_Key_Mask_Uses_OneWay_Text_Binding()
+    {
+        var translationPage = LoadXaml(
+            "src",
+            "ScreenTranslator.App",
+            "Pages",
+            "TranslationPage.xaml");
+        var textBox = Assert.Single(
+            translationPage.Descendants(Presentation + "TextBox"),
+            element =>
+                ((string?)element.Attribute("Text"))
+                    ?.Contains("SavedApiKeyMask", StringComparison.Ordinal)
+                == true);
+
+        Assert.Equal("True", (string?)textBox.Attribute("IsReadOnly"));
+        Assert.Contains(
+            "Mode=OneWay",
+            (string?)textBox.Attribute("Text"));
+    }
+
+    [Fact]
     public void Translation_Surfaces_Are_Opaque_At_Full_Window_Opacity()
     {
         Assert.Equal(
