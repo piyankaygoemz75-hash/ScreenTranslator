@@ -80,6 +80,27 @@ public sealed class VisualStyleTests
     }
 
     [Fact]
+    public void Side_Panel_Headers_Have_Full_Drag_Hit_Areas()
+    {
+        var sidePanel = LoadXaml(
+            "src",
+            "ScreenTranslator.App",
+            "Windows",
+            "SidePanelWindow.xaml");
+        var continuousPanel = LoadXaml(
+            "src",
+            "ScreenTranslator.App",
+            "Windows",
+            "ContinuousSidePanelWindow.xaml");
+
+        AssertDragHeader(FindNamedElement(sidePanel, "HeaderArea"));
+        AssertDragHeader(FindNamedElement(continuousPanel, "HeaderArea"));
+
+        var badge = FindNamedElement(sidePanel, "AiTranslationBadge");
+        Assert.Equal("5", (string?)badge.Attribute("CornerRadius"));
+    }
+
+    [Fact]
     public void Translation_Surfaces_Are_Opaque_At_Full_Window_Opacity()
     {
         Assert.Equal(
@@ -145,6 +166,23 @@ public sealed class VisualStyleTests
             "{DynamicResource TextOnAccentFillColorPrimaryBrush}",
             (string?)element.Attribute("Foreground"));
     }
+
+    private static void AssertDragHeader(XElement header)
+    {
+        Assert.Equal("Transparent", (string?)header.Attribute("Background"));
+        Assert.Equal("SizeAll", (string?)header.Attribute("Cursor"));
+        Assert.Equal(
+            "Header_OnMouseLeftButtonDown",
+            (string?)header.Attribute("MouseLeftButtonDown"));
+    }
+
+    private static XElement FindNamedElement(
+        XDocument document,
+        string elementName) =>
+        Assert.Single(
+            document.Descendants(),
+            element =>
+                (string?)element.Attribute(Xaml + "Name") == elementName);
 
     private static XDocument LoadXaml(params string[] pathParts)
     {

@@ -33,7 +33,10 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Margin="18,14,10,12"
+            <Grid x:Name="HeaderArea"
+                  Margin="18,14,10,12"
+                  Background="Transparent"
+                  Cursor="SizeAll"
                   MouseLeftButtonDown="Header_OnMouseLeftButtonDown">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -51,6 +54,7 @@
                 <ui:Button Grid.Column="1"
                            Command="{Binding CloseCommand}"
                            Appearance="Transparent"
+                           Cursor="Arrow"
                            Padding="8"
                            ToolTip="关闭">
                     <ui:SymbolIcon Symbol="Dismiss20" />

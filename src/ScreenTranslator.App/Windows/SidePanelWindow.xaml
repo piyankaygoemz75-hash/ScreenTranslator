@@ -44,14 +44,17 @@
 
             <Grid x:Name="HeaderArea"
                   Margin="18,15,12,10"
+                  Background="Transparent"
+                  Cursor="SizeAll"
                   MouseLeftButtonDown="Header_OnMouseLeftButtonDown">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="{DynamicResource AccentFillColorSecondaryBrush}"
-                            CornerRadius="999"
+                    <Border x:Name="AiTranslationBadge"
+                            Background="{DynamicResource AccentFillColorSecondaryBrush}"
+                            CornerRadius="5"
                             Padding="9,3">
                         <TextBlock Text="AI 翻译"
                                    FontSize="12"
@@ -73,6 +76,7 @@
                 </StackPanel>
                 <ui:Button Grid.Column="1"
                            ToolTip="关闭"
+                           Cursor="Arrow"
                            Padding="8,5"
                            Command="{Binding CloseCommand}">
                     <ui:SymbolIcon Symbol="Dismiss20" />

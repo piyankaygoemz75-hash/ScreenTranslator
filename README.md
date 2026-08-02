@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 ## 从源码构建发布包
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.4
+powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.5
 ```
 
 脚本会生成自包含程序、便携 ZIP 和浏览器扩展 ZIP。安装器还需要 Inno Setup 6；正式 tag 的 GitHub Actions 会自动构建安装器、执行静默安装/卸载测试、生成 SHA-256 并发布 Release。
