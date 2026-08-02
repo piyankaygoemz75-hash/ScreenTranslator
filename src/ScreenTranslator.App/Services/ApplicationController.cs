@@ -144,6 +144,7 @@ public sealed partial class ApplicationController : IDisposable
                 : _persistedSettings.HotkeyEnabled
                     ? $"准备就绪 · {HotkeySettings.HotkeyText}"
                     : "准备就绪 · 快捷键已暂停";
+        await LoadSavedApiKeyPreviewAsync();
     }
 
     public void ShowSettings()
@@ -1099,11 +1100,22 @@ public sealed partial class ApplicationController : IDisposable
             return new ConnectionTestResult(false, "Base URL 格式无效");
         }
 
+        var apiKey = await ApiKeyResolver.ResolveAsync(
+            request.ApiKey,
+            _secretStore,
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return new ConnectionTestResult(
+                false,
+                "请先配置 DeepSeek API Key");
+        }
+
         var stopwatch = Stopwatch.StartNew();
         using var httpClient = new HttpClient();
         var provider = new DeepSeekTranslationProvider(
             httpClient,
-            new InMemorySecretStore(request.ApiKey),
+            new InMemorySecretStore(apiKey),
             new DeepSeekOptions
             {
                 BaseUri = baseUri,
@@ -1136,12 +1148,25 @@ public sealed partial class ApplicationController : IDisposable
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(TranslationSettings.ApiKey))
+            var replacementApiKey = TranslationSettings.ApiKey.Trim();
+            if (replacementApiKey.Length > 0)
             {
                 await _secretStore.SetAsync(
                     DeepSeekTranslationProvider.ApiKeyName,
-                    TranslationSettings.ApiKey);
-                TranslationSettings.ApiKey = string.Empty;
+                    replacementApiKey);
+                ApplySavedApiKeyPreview(replacementApiKey);
+            }
+            else if (TranslationSettings.HasSavedApiKey)
+            {
+                _applyingSettings = true;
+                try
+                {
+                    TranslationSettings.CancelApiKeyEdit();
+                }
+                finally
+                {
+                    _applyingSettings = false;
+                }
             }
 
             await SaveSettingsAsync();
@@ -1151,6 +1176,36 @@ public sealed partial class ApplicationController : IDisposable
         catch (Exception exception)
         {
             ShowFailure($"保存设置失败：{exception.Message}");
+        }
+    }
+
+    private async Task LoadSavedApiKeyPreviewAsync()
+    {
+        try
+        {
+            var apiKey = await _secretStore.GetAsync(
+                DeepSeekTranslationProvider.ApiKeyName);
+            ApplySavedApiKeyPreview(apiKey);
+        }
+        catch (Exception exception)
+        {
+            ApplySavedApiKeyPreview(null);
+            var message = $"读取已保存的 API Key 失败：{exception.Message}";
+            TranslationSettings.SetConnectionError(message);
+            MainWindow.StatusText = message;
+        }
+    }
+
+    private void ApplySavedApiKeyPreview(string? apiKey)
+    {
+        _applyingSettings = true;
+        try
+        {
+            TranslationSettings.ApplySavedApiKey(apiKey);
+        }
+        finally
+        {
+            _applyingSettings = false;
         }
     }
 

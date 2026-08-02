@@ -7,6 +7,9 @@ namespace ScreenTranslator.App.ViewModels;
 public sealed class TranslationSettingsViewModel : ObservableObject
 {
     private string _apiKey = string.Empty;
+    private string _savedApiKeyMask = string.Empty;
+    private bool _hasSavedApiKey;
+    private bool _isEditingApiKey;
     private string _selectedModel = "deepseek-v4-flash";
     private string _baseUrl = "https://api.deepseek.com";
     private string _sourceLanguage = "自动检测";
@@ -21,6 +24,8 @@ public sealed class TranslationSettingsViewModel : ObservableObject
     {
         TestConnectionCommand = new AsyncRelayCommand(TestConnectionAsync, CanTestConnection);
         SaveCommand = new RelayCommand(() => SaveRequested?.Invoke(this, EventArgs.Empty));
+        BeginApiKeyEditCommand = new RelayCommand(BeginApiKeyEdit);
+        CancelApiKeyEditCommand = new RelayCommand(CancelApiKeyEdit);
     }
 
     public ObservableCollection<string> Models { get; } =
@@ -46,6 +51,41 @@ public sealed class TranslationSettingsViewModel : ObservableObject
             }
         }
     }
+
+    public string SavedApiKeyMask
+    {
+        get => _savedApiKeyMask;
+        private set => SetProperty(ref _savedApiKeyMask, value);
+    }
+
+    public bool HasSavedApiKey
+    {
+        get => _hasSavedApiKey;
+        private set
+        {
+            if (SetProperty(ref _hasSavedApiKey, value))
+            {
+                NotifyApiKeyStateChanged();
+                TestConnectionCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsEditingApiKey
+    {
+        get => _isEditingApiKey;
+        private set
+        {
+            if (SetProperty(ref _isEditingApiKey, value))
+            {
+                NotifyApiKeyStateChanged();
+            }
+        }
+    }
+
+    public bool ShowSavedApiKey => HasSavedApiKey && !IsEditingApiKey;
+
+    public bool ShowApiKeyEditor => !ShowSavedApiKey;
 
     public string SelectedModel
     {
@@ -111,6 +151,10 @@ public sealed class TranslationSettingsViewModel : ObservableObject
 
     public IRelayCommand SaveCommand { get; }
 
+    public IRelayCommand BeginApiKeyEditCommand { get; }
+
+    public IRelayCommand CancelApiKeyEditCommand { get; }
+
     public Func<DeepSeekConnectionTestRequest, CancellationToken, Task<ConnectionTestResult>>?
         ConnectionTester { get; set; }
 
@@ -122,8 +166,42 @@ public sealed class TranslationSettingsViewModel : ObservableObject
         ConnectionStatus = message;
     }
 
+    public void SetConnectionError(string message)
+    {
+        ConnectionSucceeded = false;
+        ConnectionStatus = message;
+    }
+
+    public void ApplySavedApiKey(string? apiKey)
+    {
+        ApiKey = string.Empty;
+        SavedApiKeyMask = ApiKeyMasker.Mask(apiKey);
+        HasSavedApiKey = SavedApiKeyMask.Length > 0;
+        IsEditingApiKey = false;
+        NotifyApiKeyStateChanged();
+    }
+
     private bool CanTestConnection() =>
-        !IsTesting && !string.IsNullOrWhiteSpace(ApiKey);
+        !IsTesting &&
+        (HasSavedApiKey || !string.IsNullOrWhiteSpace(ApiKey));
+
+    public void BeginApiKeyEdit()
+    {
+        ApiKey = string.Empty;
+        IsEditingApiKey = true;
+    }
+
+    public void CancelApiKeyEdit()
+    {
+        ApiKey = string.Empty;
+        IsEditingApiKey = false;
+    }
+
+    private void NotifyApiKeyStateChanged()
+    {
+        OnPropertyChanged(nameof(ShowSavedApiKey));
+        OnPropertyChanged(nameof(ShowApiKeyEditor));
+    }
 
     private async Task TestConnectionAsync(CancellationToken cancellationToken)
     {

@@ -5,6 +5,9 @@
       Background="Transparent"
       FontFamily="{DynamicResource AppFontFamily}"
       FontSize="14">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Page.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,28,36,36"
@@ -33,11 +36,42 @@
                         <TextBlock Text="以 sk- 开头的访问密钥"
                                    Style="{StaticResource SettingDescriptionStyle}" />
                     </StackPanel>
-                    <PasswordBox x:Name="ApiKeyBox"
-                                 Grid.Column="1"
-                                 MinWidth="300"
-                                 Padding="10,7"
-                                 PasswordChanged="ApiKeyBox_OnPasswordChanged" />
+                    <Grid Grid.Column="1" MinWidth="300">
+                        <Grid Visibility="{Binding ShowSavedApiKey,
+                                                   Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Text="{Binding SavedApiKeyMask}"
+                                     IsReadOnly="True"
+                                     IsTabStop="False"
+                                     Padding="10,7" />
+                            <ui:Button Grid.Column="1"
+                                       Content="更换"
+                                       Command="{Binding BeginApiKeyEditCommand}"
+                                       Margin="8,0,0,0"
+                                       Padding="14,7" />
+                        </Grid>
+
+                        <Grid Visibility="{Binding ShowApiKeyEditor,
+                                                   Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="ApiKeyBox"
+                                         Padding="10,7"
+                                         PasswordChanged="ApiKeyBox_OnPasswordChanged" />
+                            <ui:Button Grid.Column="1"
+                                       Content="取消"
+                                       Command="{Binding CancelApiKeyEditCommand}"
+                                       Visibility="{Binding HasSavedApiKey,
+                                                            Converter={StaticResource BooleanToVisibilityConverter}}"
+                                       Margin="8,0,0,0"
+                                       Padding="14,7" />
+                        </Grid>
+                    </Grid>
                 </Grid>
             </Border>
 
@@ -93,9 +127,12 @@
                            Command="{Binding TestConnectionCommand}"
                            Margin="8,0" />
                 <ui:Button Grid.Column="2"
-                           Content="保存"
                            Appearance="Primary"
-                           Command="{Binding SaveCommand}" />
+                           Command="{Binding SaveCommand}">
+                    <TextBlock x:Name="SaveButtonText"
+                               Text="保存"
+                               Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </ui:Button>
             </Grid>
 
             <TextBlock Text="语言与风格" Style="{StaticResource SectionTitleStyle}" />

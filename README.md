@@ -46,6 +46,8 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 4. 点击“测试连接”。
 5. 保存后使用 `Alt + Shift + T` 开始框选。
 
+保存后设置页只显示 API Key 的掩码和最后 4 位；完整 Key 仍只存在于 Windows DPAPI 安全存储中。需要替换时点击“更换”。
+
 快捷键可在“快捷键”设置页直接录制修改；如果新组合被其他软件占用，屏译会恢复上一个可用组合。
 
 默认接口地址为 `https://api.deepseek.com`。短文本翻译使用非思考模式和 JSON 输出，以降低延迟并保持 OCR 文本块与译文一一对应。
@@ -77,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 ## 从源码构建发布包
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.2
+powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.3
 ```
 
 脚本会生成自包含程序、便携 ZIP 和浏览器扩展 ZIP。安装器还需要 Inno Setup 6；正式 tag 的 GitHub Actions 会自动构建安装器、执行静默安装/卸载测试、生成 SHA-256 并发布 Release。

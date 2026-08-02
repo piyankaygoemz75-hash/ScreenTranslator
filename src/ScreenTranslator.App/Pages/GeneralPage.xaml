@@ -26,9 +26,11 @@
                         <Border Style="{StaticResource CompactBadgeStyle}"
                                 HorizontalAlignment="Left"
                                 Margin="0,0,0,12">
-                            <TextBlock Text="{Binding CaptureHotkeyText}"
+                            <TextBlock x:Name="HotkeyBadgeText"
+                                       Text="{Binding CaptureHotkeyText}"
                                        FontSize="12"
-                                       FontWeight="SemiBold" />
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                         </Border>
                         <TextBlock Text="框选并翻译屏幕内容"
                                    FontSize="20"
@@ -39,11 +41,14 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center">
-                        <ui:Button Content="开始框选"
-                                   Appearance="Primary"
+                        <ui:Button Appearance="Primary"
                                    Padding="20,8"
                                    HorizontalAlignment="Stretch"
-                                   Command="{Binding StartCaptureCommand}" />
+                                   Command="{Binding StartCaptureCommand}">
+                            <TextBlock x:Name="PrimaryCaptureButtonText"
+                                       Text="开始框选"
+                                       Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                        </ui:Button>
                         <ui:Button Content="连续框选"
                                    Padding="20,8"
                                    Margin="0,8,0,0"

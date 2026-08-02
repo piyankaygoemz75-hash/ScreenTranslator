@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using ScreenTranslator.App.ViewModels;
@@ -15,6 +16,10 @@ public partial class TranslationPage : Page
     {
         InitializeComponent();
         DataContext = viewModel;
+        PropertyChangedEventManager.AddHandler(
+            viewModel,
+            ViewModel_OnPropertyChanged,
+            nameof(TranslationSettingsViewModel.ApiKey));
     }
 
     private void ApiKeyBox_OnPasswordChanged(object sender, RoutedEventArgs e)
@@ -23,6 +28,18 @@ public partial class TranslationPage : Page
             sender is PasswordBox passwordBox)
         {
             viewModel.ApiKey = passwordBox.Password;
+        }
+    }
+
+    private void ViewModel_OnPropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs e)
+    {
+        if (sender is TranslationSettingsViewModel viewModel
+            && string.IsNullOrEmpty(viewModel.ApiKey)
+            && ApiKeyBox.Password.Length > 0)
+        {
+            ApiKeyBox.Clear();
         }
     }
 }

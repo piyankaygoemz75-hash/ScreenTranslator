@@ -118,7 +118,10 @@
                             Style="{StaticResource CompactBadgeStyle}"
                             Height="28"
                             VerticalAlignment="Top">
-                        <TextBlock Text="旁显" FontSize="12" />
+                        <TextBlock x:Name="PreviewBadgeText"
+                                   Text="旁显"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                     </Border>
                 </Grid>
             </Border>
