@@ -11,7 +11,9 @@ namespace ScreenTranslator.App.ViewModels;
 public sealed class GeneralSettingsViewModel : ObservableObject
 {
     private bool _startWithWindows;
+    private bool _startSilently;
     private bool _minimizeToTray = true;
+    private bool _showTrayIcon = true;
     private string _targetLanguage = "简体中文";
     private string _captureHotkeyText = HotkeyGesture.Default.ToDisplayString();
     private bool _isContinuousCaptureActive;
@@ -40,10 +42,22 @@ public sealed class GeneralSettingsViewModel : ObservableObject
         set => SetProperty(ref _startWithWindows, value);
     }
 
+    public bool StartSilently
+    {
+        get => _startSilently;
+        set => SetProperty(ref _startSilently, value);
+    }
+
     public bool MinimizeToTray
     {
         get => _minimizeToTray;
         set => SetProperty(ref _minimizeToTray, value);
+    }
+
+    public bool ShowTrayIcon
+    {
+        get => _showTrayIcon;
+        set => SetProperty(ref _showTrayIcon, value);
     }
 
     public string TargetLanguage

@@ -84,6 +84,18 @@ public sealed class TrayIconService : IDisposable
 
     public bool IsHotkeyPaused { get; private set; }
 
+    public bool IsVisible => !_disposed && _notifyIcon.Visible;
+
+    public void SetVisible(bool visible)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _notifyIcon.Visible = visible;
+    }
+
     public void ShowInformation(string title, string message)
     {
         if (_disposed)

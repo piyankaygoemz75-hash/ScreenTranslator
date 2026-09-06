@@ -19,7 +19,7 @@ public enum ThemePreference
 
 public sealed record AppSettings
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int Version { get; init; } = CurrentVersion;
 
@@ -57,7 +57,11 @@ public sealed record AppSettings
 
     public bool StartWithWindows { get; init; }
 
+    public bool StartSilently { get; init; }
+
     public bool MinimizeToTray { get; init; } = true;
+
+    public bool ShowTrayIcon { get; init; } = true;
 
     public AppSettings Migrate(out bool hotkeyWasReset)
     {

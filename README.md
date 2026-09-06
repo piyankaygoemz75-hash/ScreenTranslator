@@ -24,6 +24,7 @@
 - Chrome / Edge 普通网页原位译文滚动跟随
 - 连续框选：不中断地框选多个区域，按顺序识别和翻译，最多排队 5 条
 - 可拖动、可滚轮滚动且操作栏固定可见的旁边浮窗
+- 可选的 Windows 自启动静默运行，以及可隐藏的系统托盘图标
 - Windows 11 Fluent、Mica、浅色和深色主题
 - API Key 使用当前 Windows 用户范围的 DPAPI 加密
 - 默认不上传截图、不保存截图、不保存翻译历史
@@ -52,6 +53,8 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 
 默认接口地址为 `https://api.deepseek.com`。短文本翻译使用非思考模式和 JSON 输出，以降低延迟并保持 OCR 文本块与译文一一对应。
 
+在“常规”页开启“开机启动”后，可以单独开启“自启动时静默运行”，登录 Windows 时程序会在后台启动而不自动打开设置窗口；“显示托盘图标”关闭后会隐藏托盘图标和托盘菜单，但全局快捷键与已经显示的译文仍可使用。
+
 ## 连续框选
 
 普通快捷键打开框选界面后默认为单条框选，按 `Tab` 可随时切换为多条框选；再次按 `Tab` 可切回单条，并在当前选择完成后结束本轮。也可以在“常规”页点击“连续框选”，或在托盘菜单选择“连续框选翻译”，直接以多条模式开始。
@@ -79,7 +82,7 @@ powershell -ExecutionPolicy Bypass -File eng\dotnet.ps1 test ScreenTranslator.sl
 ## 从源码构建发布包
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.5
+powershell -ExecutionPolicy Bypass -File eng\build-release.ps1 -Version 0.2.6
 ```
 
 脚本会生成自包含程序、便携 ZIP 和浏览器扩展 ZIP。安装器还需要 Inno Setup 6；正式 tag 的 GitHub Actions 会自动构建安装器、执行静默安装/卸载测试、生成 SHA-256 并发布 Release。

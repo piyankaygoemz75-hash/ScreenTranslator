@@ -13,6 +13,7 @@ using ScreenTranslator.App.Services.Settings;
 using ScreenTranslator.App.Services.Tray;
 using ScreenTranslator.App.ViewModels;
 using ScreenTranslator.App.Windows;
+using ScreenTranslator.App.Infrastructure;
 using ScreenTranslator.Core.Abstractions;
 using ScreenTranslator.Core.Browser;
 using ScreenTranslator.Core.Hotkeys;
@@ -136,7 +137,9 @@ public sealed partial class ApplicationController : IDisposable
         _tray.ExitRequested += (_, _) => Exit();
 
         RegisterSavedHotkey();
-        ApplyStartupRegistration(_persistedSettings.StartWithWindows);
+        ApplyStartupRegistration(
+            _persistedSettings.StartWithWindows,
+            _persistedSettings.StartSilently);
         MainWindow.StatusText = hotkeyWasReset
             ? $"快捷键设置无效，已恢复为 {HotkeyGesture.Default.ToDisplayString()}"
             : _persistedSettings.HotkeyEnabled && !_hotkeyCoordinator.IsEnabled
@@ -1253,15 +1256,24 @@ public sealed partial class ApplicationController : IDisposable
         {
             ApplyTheme(ThemeValue(AppearanceSettings.Theme));
         }
-        else if (sender == GeneralSettings && e.PropertyName == nameof(GeneralSettings.StartWithWindows))
+        else if (sender == GeneralSettings
+                 && (e.PropertyName == nameof(GeneralSettings.StartWithWindows)
+                     || e.PropertyName == nameof(GeneralSettings.StartSilently)))
         {
-            ApplyStartupRegistration(GeneralSettings.StartWithWindows);
+            ApplyStartupRegistration(
+                GeneralSettings.StartWithWindows,
+                GeneralSettings.StartSilently);
         }
         else if (sender == GeneralSettings
                  && e.PropertyName == nameof(GeneralSettings.MinimizeToTray)
                  && _mainWindow is not null)
         {
             _mainWindow.HideOnClose = GeneralSettings.MinimizeToTray;
+        }
+        else if (sender == GeneralSettings
+                 && e.PropertyName == nameof(GeneralSettings.ShowTrayIcon))
+        {
+            _tray.SetVisible(GeneralSettings.ShowTrayIcon);
         }
 
         try
@@ -1389,7 +1401,9 @@ public sealed partial class ApplicationController : IDisposable
             var targetLabel = LanguageLabel(settings.TargetLanguage);
             GeneralSettings.TargetLanguage = targetLabel;
             GeneralSettings.StartWithWindows = settings.StartWithWindows;
+            GeneralSettings.StartSilently = settings.StartSilently;
             GeneralSettings.MinimizeToTray = settings.MinimizeToTray;
+            GeneralSettings.ShowTrayIcon = settings.ShowTrayIcon;
             GeneralSettings.CaptureHotkeyText =
                 HotkeyGesture.Parse(settings.Hotkey).ToDisplayString();
             BrowserIntegration.IsEnabled = settings.BrowserFollowingEnabled;
@@ -1405,6 +1419,7 @@ public sealed partial class ApplicationController : IDisposable
                 settings.DisplayMode == DisplayMode.Overlay ? "原位覆盖" : "原文旁边";
             AppearanceSettings.PanelOpacity = settings.OverlayOpacity * 100;
             PrivacySettings.SaveTextHistory = settings.SaveHistory;
+            _tray.SetVisible(settings.ShowTrayIcon);
             HotkeySettings.ApplyGesture(
                 HotkeyGesture.Parse(settings.Hotkey),
                 settings.HotkeyEnabled,
@@ -1432,7 +1447,9 @@ public sealed partial class ApplicationController : IDisposable
             OverlayOpacity = Math.Clamp(AppearanceSettings.PanelOpacity / 100, 0.72, 1),
             SaveHistory = false,
             StartWithWindows = GeneralSettings.StartWithWindows,
+            StartSilently = GeneralSettings.StartSilently,
             MinimizeToTray = GeneralSettings.MinimizeToTray,
+            ShowTrayIcon = GeneralSettings.ShowTrayIcon,
             Hotkey = HotkeySettings.Gesture.ToPersistedString(),
             HotkeyEnabled = HotkeySettings.IsEnabled,
             BrowserFollowingEnabled = BrowserIntegration.IsEnabled,
@@ -1593,7 +1610,7 @@ public sealed partial class ApplicationController : IDisposable
             TranslationSurfacePalette.CreateBrush(theme);
     }
 
-    private static void ApplyStartupRegistration(bool enabled)
+    private static void ApplyStartupRegistration(bool enabled, bool startSilently)
     {
         const string runKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
         const string valueName = "ScreenTranslator";
@@ -1604,7 +1621,10 @@ public sealed partial class ApplicationController : IDisposable
         {
             var executablePath = Environment.ProcessPath
                 ?? throw new InvalidOperationException("无法确定屏译程序路径。");
-            runKey.SetValue(valueName, $"\"{executablePath}\"");
+            var silentArgument = startSilently
+                ? $" {StartupCommand.SilentArgument}"
+                : string.Empty;
+            runKey.SetValue(valueName, $"\"{executablePath}\"{silentArgument}");
         }
         else
         {

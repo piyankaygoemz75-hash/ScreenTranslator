@@ -10,6 +10,8 @@ public sealed class VisualStyleTests
         "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace Xaml =
         "http://schemas.microsoft.com/winfx/2006/xaml";
+    private static readonly XNamespace WpfUi =
+        "http://schemas.lepo.co/wpfui/2022/xaml";
 
     [Fact]
     public void Badges_Use_Compact_Rounded_Rectangle_Style()
@@ -101,6 +103,26 @@ public sealed class VisualStyleTests
     }
 
     [Fact]
+    public void Startup_And_Tray_Options_Are_Bound_On_General_Page()
+    {
+        var generalPage = LoadXaml(
+            "src",
+            "ScreenTranslator.App",
+            "Pages",
+            "GeneralPage.xaml");
+
+        AssertToggleBinding(generalPage, "StartWithWindows");
+        AssertToggleBinding(generalPage, "StartSilently");
+        AssertToggleBinding(generalPage, "ShowTrayIcon");
+        Assert.Contains(
+            generalPage.Descendants(Presentation + "TextBlock"),
+            element => (string?)element.Attribute("Text") == "自启动时静默运行");
+        Assert.Contains(
+            generalPage.Descendants(Presentation + "TextBlock"),
+            element => (string?)element.Attribute("Text") == "显示托盘图标");
+    }
+
+    [Fact]
     public void Translation_Surfaces_Are_Opaque_At_Full_Window_Opacity()
     {
         Assert.Equal(
@@ -165,6 +187,15 @@ public sealed class VisualStyleTests
         Assert.Equal(
             "{DynamicResource TextOnAccentFillColorPrimaryBrush}",
             (string?)element.Attribute("Foreground"));
+    }
+
+    private static void AssertToggleBinding(XDocument document, string propertyName)
+    {
+        Assert.Contains(
+            document.Descendants(WpfUi + "ToggleSwitch"),
+            element =>
+                (string?)element.Attribute("IsChecked")
+                == $"{{Binding {propertyName}}}");
     }
 
     private static void AssertDragHeader(XElement header)

@@ -65,6 +65,8 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        var startSilently = StartupCommand.IsSilentStartup(e.Args);
+
         _singleInstanceGuard = new SingleInstanceGuard();
         if (!_singleInstanceGuard.IsPrimaryInstance)
         {
@@ -97,7 +99,10 @@ public partial class App : System.Windows.Application
         {
             Controller = new ApplicationController(this);
             await Controller.InitializeAsync();
-            Controller.ShowSettings();
+            if (!startSilently)
+            {
+                Controller.ShowSettings();
+            }
         }
         catch (Exception exception)
         {

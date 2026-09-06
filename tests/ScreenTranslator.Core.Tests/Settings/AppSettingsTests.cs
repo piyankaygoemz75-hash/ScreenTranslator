@@ -15,10 +15,12 @@ public sealed class AppSettingsTests
         Assert.Equal(DisplayMode.SidePanel, settings.DisplayMode);
         Assert.False(settings.SaveHistory);
         Assert.False(settings.StartWithWindows);
+        Assert.False(settings.StartSilently);
         Assert.Equal("Alt+Shift+T", settings.Hotkey);
         Assert.True(settings.HotkeyEnabled);
         Assert.True(settings.BrowserFollowingEnabled);
         Assert.True(settings.MinimizeToTray);
+        Assert.True(settings.ShowTrayIcon);
         Assert.Null(settings.SidePanelPlacement);
         Assert.DoesNotContain(
             settings.GetType().GetProperties(),
@@ -45,6 +47,8 @@ public sealed class AppSettingsTests
         Assert.True(migrated.HotkeyEnabled);
         Assert.True(migrated.BrowserFollowingEnabled);
         Assert.True(migrated.MinimizeToTray);
+        Assert.False(migrated.StartSilently);
+        Assert.True(migrated.ShowTrayIcon);
         Assert.Null(migrated.SidePanelPlacement);
         Assert.True(hotkeyWasReset);
     }

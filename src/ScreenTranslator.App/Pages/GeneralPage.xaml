@@ -117,6 +117,40 @@
                 </Grid>
             </Border>
 
+            <Border Style="{StaticResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="自启动时静默运行" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="仅在开机启动开启时生效；登录 Windows 后不自动打开设置窗口。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="1"
+                                     IsChecked="{Binding StartSilently}"
+                                     VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="显示托盘图标" Style="{StaticResource SettingLabelStyle}" />
+                        <TextBlock Text="关闭后隐藏系统托盘图标和托盘菜单，快捷键与已有译文仍可继续使用。"
+                                   Style="{StaticResource SettingDescriptionStyle}" />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="1"
+                                     IsChecked="{Binding ShowTrayIcon}"
+                                     VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
             <TextBlock Text="网页译文跟随"
                        Style="{StaticResource SectionTitleStyle}"
                        Margin="0,24,0,10" />
